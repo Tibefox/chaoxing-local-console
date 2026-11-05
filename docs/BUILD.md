@@ -11,3 +11,5 @@
 测试：python -m unittest discover -s android-notifier -p "test_*.py"；python -m unittest test_android_events；python -m unittest discover -s android-notifier/packaging -p "test_*.py"。
 
 第一次没有登录或配对前，不要直接启动接收。不要提交 runtime、模型密钥、DPAPI 容器、原始课件或私钥。
+
+联网包：保留完整 manifest（包括模型哈希），将 download_model.py 复制到 Setup.cmd 同目录；Setup.cmd 先运行随包 python/python.exe -I download_model.py，成功后再启动 install.py。生成发行 ZIP 时只排除 models/chat-verified.gguf 文件，其他文件保留。下载器会在执行清单校验之前恢复该文件。

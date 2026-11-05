@@ -16,7 +16,7 @@
 
 ## 安装
 
-下载同一 Release 的所有 `.part01`、`.part02`、`Merge-Package.ps1` 和 `Merge-Package.cmd` 到同一个文件夹，双击 CMD 合并并校验 ZIP，再完整解压并运行 `Setup.cmd`。
+下载 Release 的 `Chaoxing-Online-v0.1.0.zip` 与 SHA-256 文件，完整解压后双击 `Setup.cmd`。安装脚本先从固定发布版本下载约 2.5 GB 的模型并核对 SHA-256，完成后打开安装窗口。网络须能访问 Hugging Face。
 存在 D 盘时默认安装到 `D:\Apps\ChaoxingConsole`，否则使用当前用户 LocalAppData。
 MuMu 与学习通为第三方专有软件，须通过官方渠道安装；公开包不重新分发其安装程序。首次配置的“安装 MuMu”会打开官方网站，在 MuMu 应用中心安装学习通后再配对。
 
