@@ -112,7 +112,7 @@ def build(output, archive=True):
     (output/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps({'folder':str(output),'files':len(entries),'bytes':sum(e['size'] for e in entries)},ensure_ascii=False),flush=True)
     if archive:
-        target=output.with_suffix('.zip')
+        target=output.with_name(output.name+'.zip')
         if target.exists():raise ValueError('归档已存在')
         with zipfile.ZipFile(target,'w',allowZip64=True) as z:
             for file in sorted(output.rglob('*')):

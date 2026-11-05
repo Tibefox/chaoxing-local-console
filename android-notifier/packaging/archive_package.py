@@ -6,7 +6,7 @@ import zipfile
 
 def archive(folder):
     folder=Path(folder).resolve()
-    target=folder.with_suffix('.zip')
+    target=folder.with_name(folder.name+'.zip')
     if target.exists():raise ValueError('Archive already exists')
     with zipfile.ZipFile(target,'w',allowZip64=True) as z:
         for p in sorted(folder.rglob('*')):
