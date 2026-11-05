@@ -1,0 +1,12 @@
+runtime/
+__pycache__/
+*.pyc
+vendor/
+models/
+materials/*
+!materials/slides.example.jsonl
+*.dpapi
+*.keystore
+*.sqlite3
+*.log
+.env*

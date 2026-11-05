@@ -1,0 +1,14 @@
+{
+  "timezone": "Asia/Shanghai",
+  "weekly": [
+    {
+      "id": "26e262c3525d8e8a",
+      "days": [
+        2,
+        4
+      ],
+      "start": "18:00",
+      "end": "19:51"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "monitored_group": "软件工程(唐班)",
+  "group_quiz_auto_submit": true,
+  "group_vote_policy": {
+    "selection": "local_model",
+    "submission": "automatic",
+    "scope": "软件工程(唐班)"
+  }
+}
