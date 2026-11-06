@@ -23,9 +23,10 @@ ADB = ROOT/'vendor/adb/adb.exe'
 def token(directory=DATA):
     from credential_vault import transform, restrict
     directory.mkdir(parents=True, exist_ok=True)
+    # Repair inheritance on installations created by older versions.
+    restrict(directory)
     path = directory / 'bridge-token.dpapi'
     if not path.exists():
-        restrict(directory)
         path.write_bytes(transform(secrets.token_urlsafe(32).encode()))
         restrict(path)
     return transform(path.read_bytes(), True).decode()

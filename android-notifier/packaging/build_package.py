@@ -10,7 +10,7 @@ import zipfile
 
 HERE=Path(__file__).resolve().parent
 ROOT=HERE.parents[1]
-VERSION='0.1.0'
+VERSION='0.1.1'
 PYTHON=Path(sys.executable).parent
 LLAMA=ROOT/'vendor/llama'
 WEIGHTS=ROOT/'models/chat-verified.gguf'

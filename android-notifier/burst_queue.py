@@ -44,9 +44,13 @@ def page(serial,db,root,cutoff,baseline,cache):
     for key,title,node,detail in g.card_rows(root):
         if key not in cache:
             stamp=message_time(detail,now)
-            known=db.execute("SELECT state FROM group_cards WHERE card_key=?",(key,)).fetchone()
+            known=db.execute("SELECT state,observed FROM group_cards WHERE card_key=?",(key,)).fetchone()
             eligible=False
-            if (not baseline and (not known or known[0]=="group_card") and stamp is not None and stamp>=cutoff
+            # A transient configuration/icon failure must not age a newly observed
+            # activity out of the moving scan cutoff before it can be verified.
+            pending_recent=(known and known[0]=="group_card" and known[1]>=time.time()-7200
+                            and stamp is not None and stamp>=known[1]-120)
+            if (not baseline and (not known or known[0]=="group_card") and stamp is not None and (stamp>=cutoff or pending_recent)
                     and _retry_icons.get(key,0)<=time.monotonic()):
                 if frame is None:
                     frame=g.shell(serial,"exec-out","screencap")

@@ -13,6 +13,24 @@ installer=importlib.util.module_from_spec(spec);spec.loader.exec_module(installe
 
 
 class PackagingTests(unittest.TestCase):
+    @unittest.skipUnless(os.name=='nt','Windows ACL regression')
+    def test_upgrade_recovers_legacy_empty_inherited_acl(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);directory=root/'app/runtime/android'
+            directory.mkdir(parents=True)
+            path=directory/'course-options.json';path.write_text('{"enabled":true}')
+            user=os.environ['USERDOMAIN']+'\\'+os.environ['USERNAME']
+            try:
+                subprocess.run(['icacls',str(directory),'/inheritance:r','/grant:r',user+':(F)','*S-1-5-18:(F)'],
+                               check=True,capture_output=True,creationflags=installer.HIDDEN)
+                with self.assertRaises(PermissionError):path.read_text()
+            finally:
+                installer.repair_runtime_access(root)
+            self.assertTrue(json.loads(path.read_text())['enabled'])
+            next_file=directory/'new.json';next_file.write_text('{}')
+            installer.repair_runtime_access(root)
+            self.assertEqual(next_file.read_text(),'{}')
+
     def test_group_migration_preserves_disabled_switches(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);path=root/'app/runtime/android/course-options.json';path.parent.mkdir(parents=True)

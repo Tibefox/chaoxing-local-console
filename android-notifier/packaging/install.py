@@ -92,6 +92,17 @@ def migrate_group_policy(staging, manifest):
     path.write_text(json.dumps(prefs,ensure_ascii=False,indent=2),encoding='utf-8')
 
 
+def repair_runtime_access(target):
+    """Old directory-only grants stripped inherited access from existing files."""
+    user=os.environ['USERDOMAIN']+'\\'+os.environ['USERNAME']
+    for relative in ('app/runtime/android','app/runtime/credentials','app/runtime/local-model'):
+        path=Path(target)/relative
+        if path.is_dir():
+            subprocess.run(['icacls',str(path),'/inheritance:r','/grant:r',
+                            user+':(OI)(CI)(F)','*S-1-5-18:(OI)(CI)(F)'],
+                           check=True,capture_output=True,creationflags=HIDDEN)
+
+
 def install(target, package=PACKAGE, stage_only=False, report=print):
     package=Path(package).resolve();target=validate_target(target,package)
     manifest=verify(package,report)
@@ -114,6 +125,7 @@ def install(target, package=PACKAGE, stage_only=False, report=print):
             dst.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(src,dst)
             if i%100==0:report(f'安装文件 {i+1}/{len(manifest["files"])}')
         if target.exists():
+            repair_runtime_access(target)
             # Keep the user's schedule, pairing, vault and receipts on upgrades.
             preserved=('app/runtime/android','app/runtime/credentials','app/runtime/local-model','app/runtime/deployment.json') if manifest.get('runtime_profile')=='android-only' else ('app/runtime','app/settings.json')
             for relative in preserved:

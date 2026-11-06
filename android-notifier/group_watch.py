@@ -239,32 +239,49 @@ def icon_samples(serial, card, raw=None):
     return rgb
 
 
+class MonitoringConfigError(ValueError):
+    pass
+
+
+def monitoring_config(name, icon=False):
+    value=read_json(bridge.DATA/name,None)
+    valid=(isinstance(value,list) and len(value)==300 and
+           all(type(x) is int and 0<=x<=255 for x in value)) if icon else isinstance(value,dict)
+    if not valid:
+        raise MonitoringConfigError('监看配置无法读取或格式错误：'+name+'；请修复配置文件权限后重试')
+    return value
+
+
 def quiz_card(serial,card,detail,previously_detected=False,frame=None):
     now=dt.datetime.now()
     recent={(now-dt.timedelta(minutes=i)).strftime("%m-%d %H:%M") for i in (0,1)}
     if not recent.intersection(detail) and not previously_detected:
         return False
-    known=read_json(bridge.DATA/"ikuns-quiz-icon.json",[])
-    if not known:
-        return False
+    known=monitoring_config("ikuns-quiz-icon.json",icon=True)
     actual=icon_samples(serial,card,frame)
-    return len(actual)==len(known)==300 and sum(abs(a-b) for a,b in zip(actual,known))/300<5
+    return icon_matches(actual,known)
+
+
+def icon_matches(actual,known):
+    # Verified live rendering differs from the compressed reference by 5.15.
+    # Keep a bounded tolerance; page parsers still verify the activity type.
+    return len(actual)==len(known)==300 and sum(abs(a-b) for a,b in zip(actual,known))/300<8
 
 
 def vote_enabled():
-    policy=read_json(bridge.DATA/'course-options.json',{}).get('group_vote_policy',{})
+    policy=monitoring_config('course-options.json').get('group_vote_policy',{})
     return policy=={'selection':'local_model','submission':'automatic','scope':GROUP}
 
 
 def quiz_enabled():
-    options=read_json(bridge.DATA/'course-options.json',{})
+    options=monitoring_config('course-options.json')
     return options.get('group_quiz_auto_submit') is True and group_matches(options.get('monitored_group',''))
 
 
 def vote_card(serial,card,frame=None):
-    known=read_json(bridge.DATA/'ikuns-vote-icon.json',[])
+    known=monitoring_config('ikuns-vote-icon.json',icon=True)
     actual=icon_samples(serial,card,frame) if known else []
-    return len(actual)==len(known)==300 and sum(abs(a-b) for a,b in zip(actual,known))/300<5
+    return icon_matches(actual,known)
 
 
 def adapter_for(db,receipt):
@@ -441,7 +458,7 @@ def watch(serial, stop, knowledge):
                     if stop.is_set():break
                     report("登录操作已取消")
                 except (OSError, ValueError, ET.ParseError, sqlite3.Error, subprocess.TimeoutExpired) as exc:
-                    report("群页面读取重试：" + type(exc).__name__)
+                    report(str(exc) if isinstance(exc,MonitoringConfigError) else "群页面读取重试：" + type(exc).__name__)
                 stop.wait(.6)
     finally:
         report("已停止")

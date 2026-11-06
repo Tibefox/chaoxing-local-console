@@ -28,8 +28,10 @@ def transform(data,decrypt=False):
     finally:ctypes.windll.kernel32.LocalFree(dest.data)
 
 def restrict(path):
+    path=Path(path)
     user=os.environ['USERDOMAIN']+'\\'+os.environ['USERNAME']
-    subprocess.run(['icacls',str(path),'/inheritance:r','/grant:r',user+':(F)','*S-1-5-18:(F)'],
+    rights='(OI)(CI)(F)' if path.is_dir() else '(F)'
+    subprocess.run(['icacls',str(path),'/inheritance:r','/grant:r',user+':'+rights,'*S-1-5-18:'+rights],
                    check=True,capture_output=True,creationflags=subprocess.CREATE_NO_WINDOW)
 
 def save(username,password,path=None):
