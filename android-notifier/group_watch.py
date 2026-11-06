@@ -109,6 +109,27 @@ def dismiss_homework_notice(serial):
     return True
 
 
+def recover_closed_app(serial,stop,report):
+    """Recover the observed MuMu launcher after Android/app termination."""
+    if stop.is_set():return False
+    focus=shell(serial,'shell','dumpsys window | grep -m 1 mCurrentFocus=').decode(errors='replace')
+    if ' app.lawnchair/app.lawnchair.LawnchairLauncher}' not in focus:
+        return False
+    if shell(serial,'shell','pidof',APP).strip():return False
+    if shell(serial,'shell','getprop','sys.boot_completed').strip()!=b'1':return False
+    if stop.is_set():return False
+    # Android's system_server restart also drops the ADB reverse mapping.
+    mapping=f'tcp:{bridge.PORT}'
+    shell(serial,'reverse',mapping,mapping)
+    routes=shell(serial,'reverse','--list').decode(errors='replace')
+    if not any(line.split()[-2:]==[mapping,mapping] for line in routes.splitlines()):
+        raise ValueError('安卓重启后的通知转发未恢复')
+    if stop.is_set():return False
+    report('检测到学习通已退出，正在恢复应用与群监看')
+    shell(serial,'shell','am','start','-n',APP+'/.activity.SplashActivity')
+    return True
+
+
 def tap(serial, node):
     x, y, right, bottom = map(int, re.findall(r"\d+", node.get("bounds", "")))
     if right > x and bottom > y:
@@ -360,6 +381,7 @@ def watch(serial, stop, knowledge):
         write_json(STATE, {"group": GROUP, "state": state, "receiver": os.getpid(), "visible_cards": visible, "queued":queued, "checked": time.time()})
     report("正在核对群页面和活动提醒")
     retry_main = 0
+    retry_launch = 0
     try:
         with closing(sqlite3.connect(bridge.DATA / "events.sqlite3", timeout=5)) as db:
             db.execute("CREATE TABLE IF NOT EXISTS group_cards "
@@ -377,6 +399,11 @@ def watch(serial, stop, knowledge):
                         report("已关闭作业提醒，继续群监看")
                         stop.wait(.3)
                         continue
+                    if not current and time.monotonic()>=retry_launch:
+                        retry_launch=time.monotonic()+10
+                        if recover_closed_app(serial,stop,report):
+                            stop.wait(.6)
+                            continue
                     root = snapshot(serial) if current else None
                     if login_control.recover(serial,root,current,stop,report):
                         stop.wait(1)

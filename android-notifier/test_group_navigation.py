@@ -15,6 +15,32 @@ def tree(*items):
     return root
 
 class NavigationTests(unittest.TestCase):
+    def test_closed_app_after_android_restart_restores_route_and_launches(self):
+        from threading import Event
+        answers=[b'mCurrentFocus=Window{abc u0 app.lawnchair/app.lawnchair.LawnchairLauncher}',
+                 b'',b'1',b'',b'host tcp:29688 tcp:29688',b'Starting: Intent']
+        with patch.object(g,'shell',side_effect=answers) as shell:
+            self.assertTrue(g.recover_closed_app('serial',Event(),lambda _:None))
+            self.assertEqual(shell.call_args.args,('serial','shell','am','start','-n',g.APP+'/.activity.SplashActivity'))
+
+    def test_recovery_does_not_interrupt_other_apps_or_live_background_app(self):
+        from threading import Event
+        for answers in ([b'mCurrentFocus=Window{abc u0 other.app/.Main}'],
+                        [b'mCurrentFocus=Window{abc u0 app.lawnchair/app.lawnchair.LawnchairLauncher}',b'1234']):
+            with patch.object(g,'shell',side_effect=answers) as shell:
+                self.assertFalse(g.recover_closed_app('serial',Event(),lambda _:None))
+                self.assertEqual(shell.call_count,len(answers))
+
+    def test_recovery_obeys_stop_and_requires_working_forwarding(self):
+        from threading import Event
+        stop=Event();stop.set()
+        with patch.object(g,'shell') as shell:
+            self.assertFalse(g.recover_closed_app('serial',stop,lambda _:None));shell.assert_not_called()
+        answers=[b'mCurrentFocus=Window{abc u0 app.lawnchair/app.lawnchair.LawnchairLauncher}',b'',b'1',b'',b'']
+        with patch.object(g,'shell',side_effect=answers) as shell:
+            with self.assertRaisesRegex(ValueError,'通知转发'):g.recover_closed_app('serial',Event(),lambda _:None)
+            self.assertNotIn('am',shell.call_args.args)
+
     def test_bracket_variants_exact_only(self):
         self.assertTrue(g.target_chat(tree(('lv_chat_his',''),('tvTitle2','软件工程（唐班）'))))
         for name in ['ikuns','软件工程(唐班)2','软件工程(其他班)']:
