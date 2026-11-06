@@ -25,7 +25,7 @@ def main():
     frame = ttk.Frame(win, padding=20)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='连接本机 MuMu，完成一次登录与权限设置', font=('Microsoft YaHei UI', 15)).pack(anchor='w')
-    ttk.Label(frame, text='已保留每周三、周五 18:00–19:51（北京时间），时段可在控制台修改。').pack(anchor='w', pady=8)
+    ttk.Label(frame, text='新安装默认周三、周五 18:00–19:51（北京时间）；升级保留已有时段，请在控制台核对。').pack(anchor='w', pady=8)
     row = ttk.Frame(frame); row.pack(fill='x', pady=6)
     ttk.Label(row, text='MuMuManager.exe').pack(side='left')
     manager = tk.StringVar(value=str(deployment.manager_path()))

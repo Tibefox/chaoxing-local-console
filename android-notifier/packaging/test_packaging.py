@@ -47,7 +47,7 @@ class PackagingTests(unittest.TestCase):
     def make_package(self,folder):
         files={'python/python.exe':b'python','app/android-notifier/package_check.py':b'pass',
                'app/runtime/android/weekly-plan.json':b'{"weekly": [{"days": [2,4], "start":"18:00", "end":"19:51"}]}',
-               'app/runtime/android-build/course-notifier.apk':b'new-apk','app/settings.json':b'{}'}
+               'app/runtime/android-build/course-notifier.apk':b'new-apk','app/settings.json':b'{}','app/materials/slides.jsonl':b'public example'}
         rows=[]
         for name,data in files.items():
             path=folder/'payload'/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(data)
@@ -77,12 +77,18 @@ class PackagingTests(unittest.TestCase):
             target=base/'installed'
             with patch.object(installer.subprocess,'run',return_value=subprocess.CompletedProcess([],0,b'OK',b'')):
                 installer.install(target,package,True,lambda _:None)
+                materials=target/'app/materials'
+                self.assertEqual((materials/'slides.jsonl').read_bytes(),b'public example')
+                (materials/'slides.jsonl').write_bytes(b'private course knowledge')
+                (materials/'extra.txt').write_bytes(b'user notes')
                 plan=target/'app/runtime/android/weekly-plan.json';plan.write_text('{"weekly": []}')
                 token=target/'app/runtime/android/bridge-token.dpapi';token.write_bytes(b'keep-local-only')
                 apk=target/'app/runtime/android-build/course-notifier.apk';apk.write_bytes(b'old-apk')
                 result=installer.install(target,package,True,lambda _:None)
             self.assertEqual(plan.read_text(),'{"weekly": []}')
             self.assertEqual(token.read_bytes(),b'keep-local-only')
+            self.assertEqual((materials/'slides.jsonl').read_bytes(),b'private course knowledge')
+            self.assertEqual((materials/'extra.txt').read_bytes(),b'user notes')
             self.assertEqual(apk.read_bytes(),b'new-apk')
             self.assertTrue(Path(result['backup']).is_dir())
     def test_android_upgrade_omits_browser_state_but_keeps_account_and_schedule(self):
@@ -97,6 +103,7 @@ class PackagingTests(unittest.TestCase):
                     'credentials/chaoxing.dpapi':'fake-test-vault','deployment.json':'{"setup_complete":false}',
                     'browser.json':'{"worker_page":123}','browser-rounds/old.mjs':'legacy'}.items():
                     p=target/'app/runtime'/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(value)
+                (target/'app/materials/slides.jsonl').write_bytes(b'custom knowledge')
                 (target/'app/settings.json').write_text('{"worker_page":123}')
                 result=installer.install(target,package,True,lambda _:None)
             self.assertEqual((target/'app/runtime/credentials/chaoxing.dpapi').read_text(),'fake-test-vault')
@@ -105,6 +112,7 @@ class PackagingTests(unittest.TestCase):
             self.assertFalse((target/'app/runtime/browser.json').exists())
             self.assertFalse((target/'app/runtime/browser-rounds').exists())
             self.assertEqual((target/'app/settings.json').read_text(),'{}')
+            self.assertEqual((target/'app/materials/slides.jsonl').read_bytes(),b'custom knowledge')
             self.assertTrue((Path(result['backup'])/'app/runtime/browser.json').exists())
 
     def test_external_integration_failure_restores_previous_install(self):

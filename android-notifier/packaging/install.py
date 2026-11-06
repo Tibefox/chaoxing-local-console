@@ -128,6 +128,7 @@ def install(target, package=PACKAGE, stage_only=False, report=print):
             repair_runtime_access(target)
             # Keep the user's schedule, pairing, vault and receipts on upgrades.
             preserved=('app/runtime/android','app/runtime/credentials','app/runtime/local-model','app/runtime/deployment.json') if manifest.get('runtime_profile')=='android-only' else ('app/runtime','app/settings.json')
+            preserved += ('app/materials',)
             for relative in preserved:
                 old=target/relative;new=staging/relative
                 if old.is_dir():
@@ -183,7 +184,7 @@ def gui():
     win=tk.Tk();win.title('学习通控制台 · Windows 一键部署');win.geometry('720x420')
     f=ttk.Frame(win,padding=24);f.pack(fill='both',expand=True)
     ttk.Label(f,text='安装学习通本地控制台',font=('Microsoft YaHei UI',19)).pack(anchor='w')
-    ttk.Label(f,text='内置模型、课件、Python 与安卓组件\n保留周三、周五 18:00–19:51（北京时间），支持窗口内修改或取消。').pack(anchor='w',pady=12)
+    ttk.Label(f,text='随包 Python、安卓组件与示例知识库；联网包首次下载模型。\n新安装默认周三、周五 18:00–19:51（北京时间）；升级保留已有时段。').pack(anchor='w',pady=12)
     default=Path('D:/Apps/ChaoxingConsole') if Path('D:/').is_dir() else Path(os.environ.get('LOCALAPPDATA',Path.home()))/'ChaoxingConsole'
     path=tk.StringVar(value=str(default))
     row=ttk.Frame(f);row.pack(fill='x',pady=10)
@@ -206,7 +207,7 @@ def gui():
             except Exception as exc:events.put(('error',str(exc)))
         threading.Thread(target=work,daemon=True).start()
     button=ttk.Button(f,text='一键安装并打开配置',command=begin);button.pack(anchor='e',pady=10)
-    ttk.Label(f,text='安装包包含个人课程知识库；账户密码和登录态需在目标电脑重新设置。',wraplength=660).pack(anchor='w')
+    ttk.Label(f,text='公开包仅含原创示例知识库；升级保留已有课件。新电脑需本人设置账号并完成首次登录。',wraplength=660).pack(anchor='w')
     def pump():
         nonlocal busy
         while not events.empty():

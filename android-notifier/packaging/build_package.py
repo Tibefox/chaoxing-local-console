@@ -10,7 +10,7 @@ import zipfile
 
 HERE=Path(__file__).resolve().parent
 ROOT=HERE.parents[1]
-VERSION='0.1.4'
+VERSION='0.1.5'
 PYTHON=Path(sys.executable).parent
 LLAMA=ROOT/'vendor/llama'
 WEIGHTS=ROOT/'models/chat-verified.gguf'
@@ -107,8 +107,8 @@ def build(output, archive=True):
               'runtime_profile':'android-only',
               'target_group':'软件工程(唐班)',
               'weekly':json.loads((app/'runtime/android/weekly-plan.json').read_text(encoding='utf-8-sig')),
-              'scope':'software engineering Tang group quiz A-M and vote; group_config.py exact target',
-              'prerequisites':'MuMu official online bootstrap; first login and notification permission require the user'}
+              'scope':'software engineering Tang group quiz A-M, true-false and vote; group_config.py exact target',
+              'prerequisites':'MuMu installation from official website; first login and notification permission require the user'}
     (output/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps({'folder':str(output),'files':len(entries),'bytes':sum(e['size'] for e in entries)},ensure_ascii=False),flush=True)
     if archive:
