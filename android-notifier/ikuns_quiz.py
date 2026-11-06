@@ -114,8 +114,8 @@ class Question:
 
 def read_question(root):
     items = texts(root)
-    marker = re.compile(r"[\[【（(]\s*单选题\s*[\]】）)]|^单选题$")
-    found = [(i, marker.search(t)) for i,(t,_) in enumerate(items) if marker.search(t)]
+    marker = re.compile(r"[\[【（(]\s*(?:单选题|判断题)\s*[\]】）)]|^(?:单选题|判断题)$")
+    found = [(i, match) for i,(t,_) in enumerate(items) for match in marker.finditer(t)]
     if not is_quiz(root) or len(found) != 1:
         raise ValueError("题型或题数待核对")
     if any(n.get('package')==APP and n.get('class')=='android.widget.Image' for n in root.iter('node')):
@@ -204,6 +204,10 @@ def read_question(root):
         title = next((t for t,_ in before[countdown+1:] if not re.fullmatch(r"\d+[.．、]?",t)), "")
     if not (title and prompt and all(options.values()) and set(options) == set(controls)):
         raise ValueError("题目、活动时间或作答选项不完整")
+    if '判断题' in match[0]:
+        labels={re.sub(r'\s+','',value).casefold() for value in options.values()}
+        if len(options)!=2 or labels not in ({'对','错'},{'正确','错误'},{'是','否'},{'true','false'}):
+            raise ValueError('判断题的两个选项无法核验')
     return Question(title, stamp, prompt, options, controls)
 
 
@@ -351,7 +355,7 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
                         record(db,receipt,'page_parse_wait',reason=str(exc)[:200])
                 if root is not None and is_quiz(root) and (outcome(root) or
                         (adapter is not None and adapter.ready(root)) or
-                        (adapter is None and any("单选题" in t for t,_ in texts(root)))):
+                        (adapter is None and any("单选题" in t or "判断题" in t for t,_ in texts(root)))):
                     break
             elif screen in {APP+".main.ui.MainTabActivity",APP+".chat.ui.CourseChatActivity"}:
                 from group_watch import card_rows, open_group_card
