@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
+import xml.etree.ElementTree as ET
 from unittest.mock import patch
 
 sys.path[:0]=[str(Path(__file__).resolve().parent),str(Path(__file__).resolve().parents[1])]
@@ -18,6 +19,23 @@ import burst_queue as queue
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_activity_timings_keep_only_activity_pages(self):
+        import activity_trace
+        with tempfile.TemporaryDirectory() as tmp,sqlite3.connect(':memory:') as db,patch.object(activity_trace,'FOLDER',Path(tmp)):
+            root=ET.Element('hierarchy')
+            toolbar=ET.SubElement(root,'node',{'resource-id':g.PREFIX+'toolbar_tv_title','text':'登录'})
+            activity_trace.record(db,'card','opening_snapshot',root=root)
+            self.assertEqual(list(Path(tmp).iterdir()),[])
+            toolbar.set('text','投票')
+            activity_trace.record(db,'card','opening_snapshot',root=root)
+            self.assertEqual(len(list(Path(tmp).glob('*.xml'))),1)
+            self.assertEqual(db.execute('select count(*) from group_activity_trace').fetchone()[0],2)
+
+    def test_diagnostic_failure_does_not_stop_processing(self):
+        import activity_trace
+        db=sqlite3.connect(':memory:');db.close()
+        activity_trace.record(db,'card','state',state='test')
+
     @unittest.skipUnless(os.name=='nt','Windows ACL regression')
     def test_pairing_keeps_existing_and_future_config_readable(self):
         with tempfile.TemporaryDirectory() as tmp:

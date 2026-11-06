@@ -10,7 +10,7 @@ import zipfile
 
 HERE=Path(__file__).resolve().parent
 ROOT=HERE.parents[1]
-VERSION='0.1.1'
+VERSION='0.1.2'
 PYTHON=Path(sys.executable).parent
 LLAMA=ROOT/'vendor/llama'
 WEIGHTS=ROOT/'models/chat-verified.gguf'
@@ -45,7 +45,7 @@ def build(output, archive=True):
                  'schedules.py','credential_vault.py'):
         copy(ROOT/name,app/name)
     for name in ('desktop_control.py','weekly_control.py','register_weekly.ps1','course_session.py','group_watch.py',
-                 'burst_queue.py','ikuns_quiz.py','ikuns_vote.py','process_lifecycle.py','process_catalog.ps1','login_control.py','group_config.py'):
+                 'burst_queue.py','ikuns_quiz.py','ikuns_vote.py','activity_trace.py','process_lifecycle.py','process_catalog.ps1','login_control.py','group_config.py'):
         copy(ROOT/'android-notifier'/name,app/'android-notifier'/name)
     for name in ('launcher.py','first_run.py','package_check.py'):
         copy(HERE/name,app/'android-notifier'/name)

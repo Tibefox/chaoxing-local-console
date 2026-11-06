@@ -2,11 +2,13 @@
 
 使用 MuMu 的 Android 页面识别、Qwen 本地模型与知识检索，串行处理目标群的随堂练习和投票，并核对回执、返回群聊继续监看。旧网页轮询和网页提交分支已移除。
 
-[下载安装包](https://github.com/Tibefox/chaoxing-local-console/releases/tag/v0.1.1) · [完整安装流程](docs/INSTALL.md) · [源码构建](docs/BUILD.md)
+[下载安装包](https://github.com/Tibefox/chaoxing-local-console/releases/tag/v0.1.2) · [完整安装流程](docs/INSTALL.md) · [源码构建](docs/BUILD.md)
 
-## v0.1.1 修复
+## v0.1.2 修复与诊断
 
 修复首次配对后配置文件权限继承丢失，导致自动提交开关与图标无法读取的问题；配置异常现在会明确显示。调整经实机核对的图标容差，并恢复近期首次发现但核验失败的卡片，保留已提交活动去重。已有安装升级后重启接收端即可修复目录继承。
+
+新增本地活动过程记录：卡片点击、页面解析、模型完成与提交状态的时间，以及活动页面快照。记录保存在本机 runtime/android/activity-traces 和收件数据库中，不上传 GitHub，也不记录登录输入页。
 
 ## 当前能力
 
@@ -20,7 +22,7 @@
 
 ## 安装
 
-下载 Release 的 `Chaoxing-Online-v0.1.1.zip` 与 SHA-256 文件，完整解压后双击 `Setup.cmd`。安装脚本先从固定发布版本下载约 2.5 GB 的模型并核对 SHA-256，完成后打开安装窗口。网络须能访问 Hugging Face。
+下载 Release 的 `Chaoxing-Online-v0.1.2.zip` 与 SHA-256 文件，完整解压后双击 `Setup.cmd`。安装脚本先从固定发布版本下载约 2.5 GB 的模型并核对 SHA-256，完成后打开安装窗口。网络须能访问 Hugging Face。
 存在 D 盘时默认安装到 `D:\Apps\ChaoxingConsole`，否则使用当前用户 LocalAppData。
 MuMu 与学习通为第三方专有软件，须通过官方渠道安装；公开包不重新分发其安装程序。首次配置的“安装 MuMu”会打开官方网站，在 MuMu 应用中心安装学习通后再配对。
 

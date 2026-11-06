@@ -297,6 +297,8 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
     is_quiz = handler.is_quiz
     outcome = handler.outcome
     save_platform_receipt = handler.save_platform_receipt
+    from activity_trace import record
+    record(db,receipt,'handler_started',kind='vote' if adapter else 'quiz')
     def guard():
         if stop.is_set() or (DATA/"stop").exists() or time.time() >= deadline:
             raise TimeoutError("处理时段已结束")
@@ -305,6 +307,8 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
         while True:
             guard()
             root = clear_overlay(serial,snapshot(serial),report)
+            if opening:
+                record(db,receipt,'opening_snapshot',root=root)
             if activity(serial) == VIEWER:
                 return root
             if opening:
@@ -320,6 +324,7 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
             db.execute("CREATE TABLE IF NOT EXISTS group_steps (receipt TEXT, at REAL, state TEXT)")
             db.execute("INSERT INTO group_steps VALUES(?,?,?)",(receipt,time.time(),state))
         report(state)
+        record(db,receipt,'state',state=state)
     def stable_question(root):
         until=min(deadline,time.time()+6)
         while True:
@@ -338,6 +343,12 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
             screen=activity(serial)
             if screen == VIEWER:
                 root = view(opening=True)
+                if root is not None and is_quiz(root) and not outcome(root):
+                    try:
+                        parsed=read_question(root)
+                        record(db,receipt,'page_parsed',options=len(parsed.options))
+                    except ValueError as exc:
+                        record(db,receipt,'page_parse_wait',reason=str(exc)[:200])
                 if root is not None and is_quiz(root) and (outcome(root) or
                         (adapter is not None and adapter.ready(root)) or
                         (adapter is None and any("单选题" in t for t,_ in texts(root)))):
@@ -364,6 +375,7 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
             update(final)
             return True
         root,question = stable_question(root)
+        record(db,receipt,'question_ready',root=root,options=len(question.options))
         if adapter is None:
             folder=DATA/'android'/'quiz-layouts'
             folder.mkdir(parents=True,exist_ok=True)
@@ -394,6 +406,7 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
              "options":[{"key":k,"text":v} for k,v in question.options.items()]}
         answer = solve(knowledge,[q],min(12, max(.1,deadline-time.time())))
         choices=answer['answers']['q1']
+        record(db,receipt,'model_finished',choices=choices)
         if not getattr(question,'min_choices',1)<=len(choices)<=getattr(question,'max_choices',1):
             raise ValueError('模型选择数量不符合投票规则')
         chosen = ','.join(choices)

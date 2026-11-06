@@ -444,6 +444,8 @@ def watch(serial, stop, knowledge):
                                     with db:
                                         db.execute("UPDATE group_cards SET state='练习待处理' WHERE card_key=?",(source,))
                                     continue
+                                from activity_trace import record as trace_activity
+                                trace_activity(db,source,'card_clicked',kind='vote' if is_vote else 'quiz')
                                 done=handler.run(serial,db,source,knowledge,stop,deadline,report)
                                 if not done and not stop.is_set():
                                     check_submission(serial,db,source,stop)
