@@ -13,7 +13,7 @@
 python -m unittest discover -s android-notifier -p "test_*.py"
 python -m unittest test_android_events
 python -m unittest discover -s android-notifier/packaging -p "test_*.py"
-python android-notifier/packaging/build_package.py --output D:\Release\Chaoxing-Online-v0.1.5 --no-archive
+python android-notifier/packaging/build_package.py --output D:\Release\Chaoxing-Online-v0.1.6 --no-archive
 ```
 
 输出目录必须不存在。构建器使用明确的文件清单，拒绝私有 runtime、DPAPI、数据库和密钥文件。构建后仍须人工核对源码、知识库及许可证；白名单不等于任意文件内容都可公开。
@@ -23,7 +23,7 @@ python android-notifier/packaging/build_package.py --output D:\Release\Chaoxing-
 完整载荷含模型，用于本地安装校验；GitHub 联网 ZIP 只排除模型本体，保留 manifest 中的模型条目。以下命令在源码根目录执行，按实际情况修改第一行输出路径：
 
 ```powershell
-$releaseDir = 'D:\Release\Chaoxing-Online-v0.1.5'
+$releaseDir = 'D:\Release\Chaoxing-Online-v0.1.6'
 Copy-Item android-notifier/packaging/download_model.py "$releaseDir\download_model.py"
 Copy-Item LICENSE "$releaseDir\LICENSE"
 @'

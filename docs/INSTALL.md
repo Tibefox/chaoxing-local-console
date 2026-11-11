@@ -1,11 +1,11 @@
 # Windows 安装与升级
 
-当前推荐 [v0.1.5 联网安装包](https://github.com/Tibefox/chaoxing-local-console/releases/tag/v0.1.5)。这是预发布；完全干净 Windows 的完整验收尚未完成，详见 [验证范围](VERIFICATION-2026-11-06.md)。
+当前定版为 [v0.1.6 联网安装包](https://github.com/Tibefox/chaoxing-local-console/releases/tag/v0.1.6)。完全干净 Windows 的完整验收尚未完成，详见 [验证范围](VERIFICATION-2026-11-06.md)。
 
 ## 首次安装
 
 1. 准备 Windows x64，将系统时区设为北京时间（Windows 标识 `China Standard Time`）。电脑需要支持 MuMu 所需的虚拟化。准备至少 7 GB 安装空间，另为 MuMu、安卓实例和后续升级备份留空间。
-2. 下载 `Chaoxing-Online-v0.1.5.zip` 与同名 `.sha256`，用 PowerShell `Get-FileHash .\Chaoxing-Online-v0.1.5.zip -Algorithm SHA256` 对照校验文件。完整解压到本机磁盘，不要在压缩软件内运行。
+2. 下载 `Chaoxing-Online-v0.1.6.zip` 与同名 `.sha256`，用 PowerShell `Get-FileHash .\Chaoxing-Online-v0.1.6.zip -Algorithm SHA256` 对照校验文件。完整解压到本机磁盘，不要在压缩软件内运行。
 3. 双击 `Setup.cmd`。随包 Python 会先下载约 2.5 GB 的固定版本模型并核对 SHA-256，需要网络能访问 Hugging Face。失败后可再次运行；已完整且校验通过的模型会直接复用，未完成的下载不会作为可用模型。下载结束才进入安装窗口。
 4. 点击“一键安装并打开配置”，确认目录。有 D 盘时默认 `D:\Apps\ChaoxingConsole`，否则使用当前用户 LocalAppData。无需单独安装 Python 或开发工具。
 5. 在首次配置中点击“安装 MuMu”，通过官方网站安装；管理员授权、虚拟化配置和必要的重启由本人完成。选择安装后的 `nx_main\MuMuManager.exe`，实例默认 0。若本机缺少 VC++ 运行库，点击“安装 VC++ 运行库”并完成安装。
