@@ -1,7 +1,6 @@
 """Offline CPU OCR in a cancellable child process; no application input actions."""
 from io import BytesIO
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -15,6 +14,14 @@ from question_extract import TextBlock, extract
 HERE = Path(__file__).resolve().parent
 MAX_BYTES = 20 * 1024 * 1024
 MAX_PIXELS = 16_000_000
+
+
+def control_epoch():
+    path = HERE.parent / 'runtime/android/control-epoch.json'
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return b''
 
 
 def load_dependencies():
@@ -52,6 +59,7 @@ def file_capture(path):
 
 def run_worker(request, cancel, timeout):
     """Transient files are removed on success, failure, cancellation and timeout."""
+    initial_epoch = control_epoch()
     with tempfile.TemporaryDirectory(prefix='chaoxing-ocr-') as folder:
         folder = Path(folder)
         request_path = folder / 'request.json'
@@ -67,11 +75,11 @@ def run_worker(request, cancel, timeout):
             deadline = time.monotonic() + timeout
             try:
                 while process.poll() is None:
-                    if cancel.wait(.1):
+                    if cancel.wait(.1) or control_epoch() != initial_epoch:
                         raise InterruptedError('已取消识别')
                     if time.monotonic() >= deadline:
                         raise TimeoutError('识别超时，请缩小图片范围后重试')
-                if cancel.is_set():
+                if cancel.is_set() or control_epoch() != initial_epoch:
                     raise InterruptedError('已取消识别')
                 result_path = folder / 'result.json'
                 if process.returncode or not result_path.is_file():

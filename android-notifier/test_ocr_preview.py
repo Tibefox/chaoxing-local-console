@@ -42,6 +42,15 @@ class PreviewContractTests(unittest.TestCase):
                     child.kill.assert_called_once(); child.wait.assert_called_once()
                     self.assertFalse(Path(popen.call_args.args[0][-1]).exists())
 
+    def test_project_stop_epoch_cancels_ocr_child(self):
+        class Image:
+            def save(self, path): Path(path).write_bytes(b'fixture')
+        with patch('ocr_engine.control_epoch', side_effect=[b'old', b'new']), patch('ocr_engine.subprocess.Popen') as popen:
+            popen.return_value.poll.return_value = None
+            with self.assertRaises(InterruptedError):
+                run_worker({'image': Image(), 'crops': []}, threading.Event(), 30)
+            popen.return_value.kill.assert_called_once()
+
 
 @unittest.skipUnless(os.name == 'nt' and os.environ.get('CHAOXING_OCR_INTEGRATION') == '1',
                      'Run separately in the isolated Windows OCR environment')
@@ -74,6 +83,8 @@ class OCRIntegrationTests(unittest.TestCase):
             preview.result = result; preview.image = image
             preview.set_text(format_result(result))
             preview.window.update(); preview.draw(); preview.window.update()
+            for _ in range(5):
+                preview.window.update(); time.sleep(.1)
             self.assertEqual(str(preview.output['state']), 'disabled')
             self.assertIn('提交', preview.output.get('1.0', 'end'))
             self.assertGreater(len(preview.canvas.find_all()), len(result['blocks']))
@@ -108,6 +119,23 @@ class OCRIntegrationTests(unittest.TestCase):
         self.assertIn('错误',result['options']['A'])
         self.assertIn('代码量',result['options']['B'])
         self.assertEqual({b['source'] for b in result['blocks']},{'native','ocr'})
+
+    def test_image_prompt_with_native_options(self):
+        from PIL import Image, ImageDraw, ImageFont
+        import xml.etree.ElementTree as ET
+        from question_capture import APP
+        root=ET.Element('hierarchy',window='fixture')
+        web=ET.SubElement(root,'node',{'class':'android.webkit.WebView','bounds':'[0,0][1000,700]'})
+        for value,box,kind in [('[单选题]','[20,30][900,80]','TextView'),
+                ('','[20,100][950,200]','Image'),('A. 发现错误','[20,250][900,300]','TextView'),
+                ('B. 增加代码量','[20,350][900,400]','TextView')]:
+            ET.SubElement(web,'node',{'package':APP,'class':'android.widget.'+kind,'text':value,'bounds':box})
+        image=Image.new('RGB',(1000,700),'white');draw=ImageDraw.Draw(image)
+        draw.text((30,120),'软件测试的主要目的是什么？',font=ImageFont.truetype(r'C:\Windows\Fonts\msyh.ttc',36),fill='black')
+        data=BytesIO();image.save(data,format='PNG')
+        result,_=recognize(Capture(data.getvalue(),root))
+        self.assertIn('软件测试',result['prompt'])
+        self.assertEqual(result['options'],{'A':'发现错误','B':'增加代码量'})
 
 
 if __name__ == '__main__':

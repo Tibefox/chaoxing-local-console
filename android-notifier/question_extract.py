@@ -1,7 +1,6 @@
 """Read-only question text assembly. Results are never actionable quiz objects."""
 from dataclasses import dataclass, asdict
 import re
-import unicodedata
 
 
 @dataclass(frozen=True)
@@ -34,7 +33,11 @@ def extract(blocks, warnings=()):
     label = re.compile(r'^(?:[（(【\[]\s*)?([A-M])(?:[.、:：)）\]】]\s*|\s+|$)', re.I)
     lines = []
     for b in ordered:
-        value = unicodedata.normalize('NFKC', b.text).strip()
+        # Normalize label-width variants only; preserve punctuation and symbols
+        # in the question itself instead of rewriting its meaning with NFKC.
+        width = {chr(c): chr(c - 0xFEE0) for start in (0xFF21, 0xFF41) for c in range(start, start + 26)}
+        width.update({'．': '.', '　': ' '})
+        value = b.text.translate(str.maketrans(width)).strip()
         if not value:
             continue
         if b.source == 'ocr' and (b.confidence is None or b.confidence < .85):

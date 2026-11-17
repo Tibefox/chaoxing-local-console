@@ -39,6 +39,7 @@ class SubmissionSwitchTests(unittest.TestCase):
                 for n in root.iter('node'):
                     if quiz.text(n) == '提交':
                         n.set('visible', 'true')
+                        n.set('bounds', '[10,400][900,450]')
                 return root
             def solve(*args):
                 nonlocal enabled

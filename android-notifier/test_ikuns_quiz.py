@@ -46,6 +46,10 @@ def page(stage):
 
 
 class GroupQuizTests(unittest.TestCase):
+    def setUp(self):
+        enabled = patch.object(group_watch, 'quiz_enabled', return_value=True)
+        enabled.start(); self.addCleanup(enabled.stop)
+
     def test_clipped_visible_radio_is_excluded_until_scrolled_inside(self):
         root=page('question')
         ET.SubElement(root,'node',{'class':'android.webkit.WebView','bounds':'[0,80][900,1600]'})

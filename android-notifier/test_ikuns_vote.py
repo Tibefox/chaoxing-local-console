@@ -39,6 +39,10 @@ def page(mode='single',chosen=(),submitted=False):
 
 
 class VoteTests(unittest.TestCase):
+    def setUp(self):
+        enabled = patch.object(g, 'vote_enabled', return_value=True)
+        enabled.start(); self.addCleanup(enabled.stop)
+
     def test_four_real_quick_vote_structures_use_dynamic_labels(self):
         for labels in [('赞同','反对'),('正确','错误'),('A','B'),('A','B','C','D')]:
             root=page()

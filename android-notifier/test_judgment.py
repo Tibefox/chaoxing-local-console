@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 
 sys.path[:0]=[str(Path(__file__).resolve().parent),str(Path(__file__).resolve().parents[1])]
 import ikuns_quiz as quiz
+import group_watch
 import activity_trace
 from test_ikuns_quiz import page
 
@@ -20,6 +21,10 @@ def layout():
 
 
 class JudgmentTests(unittest.TestCase):
+    def setUp(self):
+        enabled = patch.object(group_watch, 'quiz_enabled', return_value=True)
+        enabled.start(); self.addCleanup(enabled.stop)
+
     def test_captured_judgment_layout(self):
         q=quiz.read_question(layout())
         self.assertEqual(q.options,{'A':'对','B':'错'})

@@ -16,6 +16,7 @@ import ikuns_quiz,ikuns_vote,desktop_control,login_control,credential_vault
 from group_config import GROUP, matches
 import group_watch
 import course_session,app_runtime
+import ocr_engine,ocr_preview,question_capture,question_extract
 
 def main():
     assert Path(sys.executable).resolve().is_relative_to(ROOT.parent)
@@ -31,6 +32,11 @@ def main():
     assert ikuns_quiz.OPTION_KEYS=='ABCDEFGHIJKLM'
     assert credential_vault.VAULT==ROOT/'runtime/credentials/chaoxing.dpapi'
     assert GROUP=='软件工程(唐班)' and matches('软件工程（唐班）') and not matches('ikuns')
+    ocr_engine.load_dependencies()
+    import rapidocr, onnxruntime
+    assert 'CPUExecutionProvider' in onnxruntime.get_available_providers()
+    for name in ('PP-OCRv6_det_small.onnx','PP-OCRv6_rec_small.onnx','ch_ppocr_mobile_v2.0_cls_mobile.onnx'):
+        assert (Path(rapidocr.__file__).parent/'models'/name).is_file(),name
     prefs=json.loads((ROOT/'runtime/android/course-options.json').read_text(encoding='utf-8-sig'))
     assert prefs['monitored_group']==GROUP
     assert not any((ROOT/name).exists() for name in ('monitor.py','event_executor.py','browser_bridge.mjs','browser_execution.mjs','browser_login.mjs','read_vault.ps1','schedule.json'))

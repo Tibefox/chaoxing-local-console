@@ -5,7 +5,7 @@ from pathlib import Path
 import queue
 import threading
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog
 
 from ocr_engine import file_capture, load_dependencies, recognize
 from question_capture import capture_current
@@ -24,6 +24,12 @@ def format_result(result):
 
 class Preview:
     def __init__(self, parent=None, current=None):
+        if parent is None:
+            try:
+                import ctypes
+                ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+            except (AttributeError, OSError):
+                pass
         self.window = tk.Toplevel(parent) if parent else tk.Tk()
         self.window.title('图片题文字识别 · 仅预览')
         self.window.geometry('1100x740')
@@ -32,6 +38,7 @@ class Preview:
         self.events = queue.Queue()
         self.busy = False
         self.closed = False
+        self.closing = False
         self.result = None
         self.image = None
         self.photo = None
@@ -134,6 +141,9 @@ class Preview:
             self.canvas.create_text(x1, max(8, y1), text=str(i), anchor='sw', fill=color)
 
     def close(self):
+        if self.closing or self.closed:
+            return
+        self.closing = True
         self.cancel.set()
         self.status.set('正在取消识别并清理临时图片…')
         def finish():
