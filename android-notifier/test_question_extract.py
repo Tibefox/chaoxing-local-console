@@ -23,6 +23,38 @@ def tree():
 
 
 class ExtractionTests(unittest.TestCase):
+    def test_nested_webview_wrapper_reads_one_document(self):
+        root = tree(); web = root[1]; root.remove(web)
+        wrapper = ET.SubElement(root, 'node', {'class': 'android.webkit.WebView',
+            'bounds': '[0,70][1000,700]', 'visible': 'true'})
+        wrapper.append(web)
+        web.set('bounds', '[0,70][1000,701]')
+        web.set('package', APP); web.set('text', '随堂练习')
+        native, crops, warnings = regions(root, (1000, 700))
+        expected_native, expected_crops, _ = regions(tree(), (1000, 700))
+        self.assertEqual(native, expected_native)
+        self.assertEqual(crops, expected_crops)
+        self.assertEqual(warnings, [])
+
+    def test_nested_document_uses_outer_viewport_for_clipping(self):
+        root = tree(); web = root[1]; root.remove(web)
+        wrapper = ET.SubElement(root, 'node', {'class': 'android.webkit.WebView',
+            'bounds': '[0,70][1000,300]'})
+        wrapper.append(web)
+        _, crops, warnings = regions(root, (1000, 700))
+        self.assertEqual(crops, [(90, 180, 900, 240)])
+        self.assertTrue(warnings)
+
+    def test_separate_or_branching_webviews_are_rejected(self):
+        for nested in (False, True):
+            root = tree()
+            parent = root[1] if nested else root
+            for _ in range(2):
+                ET.SubElement(parent, 'node', {'class': 'android.webkit.WebView',
+                    'bounds': '[0,70][1000,700]'})
+            with self.assertRaisesRegex(ValueError, '布局尚未支持'):
+                regions(root, (1000, 700))
+
     def test_native_labels_and_image_text_on_same_line(self):
         native, crops, warnings = regions(tree(), (1000, 700))
         self.assertEqual(crops, [(90, 180, 900, 240), (90, 280, 900, 340)])

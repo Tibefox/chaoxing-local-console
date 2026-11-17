@@ -57,18 +57,24 @@ def capture_current(serial, snapshot=None, shell=None, guard=lambda: None):
 def regions(root, size):
     """Return native text plus fully visible image crops, conservatively."""
     width, height = size
-    webviews = [n for n in root.iter('node') if n.get('class') == 'android.webkit.WebView']
-    if len(webviews) != 1:
+    webviews = [n for n in root.iter('node') if n.get('class') == 'android.webkit.WebView'
+                and n.get('visible') != 'false']
+    # Android exposes both the native WebView wrapper and its HTML document.
+    # Accept one nested chain, while refusing separate/branching documents.
+    if not webviews or any(b not in a.iter('node') and a not in b.iter('node')
+                          for i, a in enumerate(webviews) for b in webviews[i + 1:]):
         raise ValueError('题目区域布局尚未支持，请导入裁剪后的题目图片预览')
-    web = webviews[0]
-    viewport = bounds(web)
-    if viewport is None:
+    web = webviews[-1]
+    boxes = [bounds(n) for n in webviews]
+    if any(box is None for box in boxes):
         raise ValueError('无法核对题目区域')
-    left, top, right, bottom = viewport
-    viewport = max(0, left), max(0, top), min(width, right), min(height, bottom)
+    viewport = (max(0, *(b[0] for b in boxes)), max(0, *(b[1] for b in boxes)),
+                min(width, *(b[2] for b in boxes)), min(height, *(b[3] for b in boxes)))
+    if viewport[0] >= viewport[2] or viewport[1] >= viewport[3]:
+        raise ValueError('无法核对题目区域')
     images, native, warnings = [], [], []
     for n in web.iter('node'):
-        if n.get('package') != APP or n.get('visible') == 'false':
+        if n.get('package') != APP or n.get('visible') == 'false' or n is web:
             continue
         box = bounds(n)
         if not box or box[2] <= box[0] or box[3] <= box[1]:
