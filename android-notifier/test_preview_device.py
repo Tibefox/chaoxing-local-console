@@ -133,5 +133,15 @@ class DeviceTests(unittest.TestCase):
         self.page=deepcopy(self.page);self.page[0].set('text','其他页面')
         with self.assertRaisesRegex(ValueError,'结果已丢弃'):capture.validate()
 
+    def test_image_changed_with_identical_tree_is_discarded(self):
+        class Image:
+            size=(1000,700)
+            def __init__(self,pixels):self.pixels=pixels
+            def crop(self,box):return self
+            def tobytes(self):return self.pixels
+        capture=self.device.capture(Event())
+        with patch('ocr_engine.image_from_bytes',side_effect=[Image(b'old'),Image(b'new')]):
+            with self.assertRaisesRegex(ValueError,'图片变化'):capture.validate()
+
 
 if __name__ == '__main__':unittest.main()
