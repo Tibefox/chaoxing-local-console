@@ -166,7 +166,8 @@ class OCRIntegrationTests(unittest.TestCase):
         preview=Preview()
         preview.window.update()
         preview.close()
-        self.assertEqual(preview.window.tk.call('after','info'),())
+        pending = preview.window.tk.splitlist(preview.window.tk.call('after','info'))
+        self.assertEqual(pending, ())
 
     def test_image_prompt_with_native_options(self):
         from PIL import Image, ImageDraw, ImageFont
