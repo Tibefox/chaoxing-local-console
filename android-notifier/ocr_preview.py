@@ -61,6 +61,7 @@ class Preview:
         panes.pack(fill='both', expand=True, padx=10, pady=5)
         left, right = ttk.Frame(panes), ttk.Frame(panes)
         panes.add(left, weight=1); panes.add(right, weight=1)
+        self.window.after(50, lambda: panes.sashpos(0, max(250, panes.winfo_width() // 2)) if not self.closed else None)
         self.canvas = tk.Canvas(left, background='#e8e8e8', highlightthickness=0)
         self.canvas.pack(fill='both', expand=True)
         self.canvas.bind('<Configure>', lambda _: self.draw())

@@ -71,18 +71,21 @@ class OCRIntegrationTests(unittest.TestCase):
 
     def test_actual_chinese_ocr_and_readonly_preview(self):
         png = self.fixture()
-        result, image = recognize(Capture(png))
-        self.assertIn('软件测试', result['prompt'])
-        self.assertEqual(list(result['options']), list('ABCD'))
-        self.assertIn('错误', result['options']['A'])
-        self.assertIn('代码量', result['options']['B'])
-        self.assertTrue(result['blocks'])
-        self.assertEqual(result['mode'], 'preview_only')
         preview = Preview()
         try:
-            preview.result = result; preview.image = image
-            preview.set_text(format_result(result))
-            preview.window.update(); preview.draw(); preview.window.update()
+            preview.start(lambda: Capture(png))
+            deadline=time.monotonic()+55
+            while preview.busy and time.monotonic()<deadline:
+                preview.window.update(); time.sleep(.05)
+            self.assertFalse(preview.busy, 'Preview did not finish')
+            result=preview.result
+            self.assertIsNotNone(result, preview.status.get())
+            self.assertIn('软件测试', result['prompt'])
+            self.assertEqual(list(result['options']), list('ABCD'))
+            self.assertIn('错误', result['options']['A'])
+            self.assertIn('代码量', result['options']['B'])
+            self.assertTrue(result['blocks'])
+            self.assertEqual(result['mode'], 'preview_only')
             for _ in range(5):
                 preview.window.update(); time.sleep(.1)
             self.assertEqual(str(preview.output['state']), 'disabled')
@@ -97,6 +100,23 @@ class OCRIntegrationTests(unittest.TestCase):
             ImageGrab.grab(bbox=(x,y,x+preview.window.winfo_width(),y+preview.window.winfo_height())).save(folder/'preview.png')
         finally:
             preview.close()
+
+    def test_real_ocr_cancellation_reaps_child(self):
+        import subprocess
+        original=subprocess.Popen
+        children=[]
+        def spawn(*a,**kw):
+            child=original(*a,**kw);children.append(child);return child
+        stop=threading.Event()
+        png=self.fixture()
+        timer=threading.Timer(.5,stop.set);timer.start()
+        try:
+            with patch('ocr_engine.subprocess.Popen',side_effect=spawn):
+                with self.assertRaises(InterruptedError):recognize(Capture(png),stop)
+        finally:
+            timer.cancel()
+        self.assertTrue(children)
+        self.assertTrue(all(c.poll() is not None for c in children))
 
     def test_blank_and_corrupt_input(self):
         from PIL import Image
