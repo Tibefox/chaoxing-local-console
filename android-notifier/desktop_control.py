@@ -366,6 +366,8 @@ def main():
         run(guarded_start)
     add("启动接收", launch_session)
     def request_stop():
+        if ocr_window is not None and not ocr_window.closed:
+            ocr_window.cancel.set()
         generation = gate.stop()
         if generation is None:
             return
@@ -396,11 +398,27 @@ def main():
         return f"已打开 {GROUP} 群聊。"
     add("打开监看群聊", lambda: run(open_group))
     add("打开通知桥", lambda: launch_app(bridge.PACKAGE + "/.MainActivity"))
+    ocr_window = None
+    def preview_ocr():
+        nonlocal ocr_window
+        if ocr_window is not None and not ocr_window.closed:
+            ocr_window.window.lift()
+            return
+        from ocr_preview import dialog as ocr_dialog
+        def current_serial():
+            from group_watch import quiz_enabled, vote_enabled
+            if quiz_enabled() or vote_enabled():
+                raise RuntimeError('请先关闭练习和投票自动提交，再预览当前题目')
+            if receiver():
+                raise RuntimeError('请先停止接收端，再本人打开题目预览，避免监看线程切换页面；也可导入图片')
+            return connect(vm_info())  # Never starts MuMu, the receiver or the model.
+        ocr_window = ocr_dialog(win, current_serial)
     from weekly_control import dialog, rules, DAYS
     add("每周时段", lambda: dialog(win))
     account_bar = ttk.Frame(frame)
     account_bar.pack(fill='x', pady=(7,0))
     ttk.Button(account_bar,text='账号与登录',command=account_settings).pack(side='left')
+    ttk.Button(account_bar,text='图片题预览',command=preview_ocr).pack(side='left',padx=6)
     ttk.Label(account_bar,text='首次登录由本人完成；过期先尝试加密账密，额外验证交给本人。').pack(side='left',padx=8)
     timetable = tk.StringVar()
     ttk.Label(frame, textvariable=timetable, wraplength=610).pack(anchor="w", pady=(7, 0))
@@ -487,7 +505,11 @@ def main():
         if gate.busy:
             message.set("请等待当前操作完成后再关闭窗口。")
         else:
-            win.destroy()
+            if ocr_window is not None and not ocr_window.closed:
+                ocr_window.close()
+                win.after(100, close)
+            else:
+                win.destroy()
     win.protocol("WM_DELETE_WINDOW", close)
     pump()
     inspect()

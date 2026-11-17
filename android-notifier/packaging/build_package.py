@@ -37,6 +37,8 @@ def replace_once(path,pattern,replacement):
 
 
 def build(output, archive=True):
+    from prepare_ocr import prepare
+    ocr_runtime = prepare(ROOT/'vendor/ocr-runtime')
     output=Path(output).resolve()
     if output.exists():raise ValueError('输出目录已存在，请使用新版本目录，避免覆盖已交付包')
     output.mkdir(parents=True)
@@ -45,7 +47,8 @@ def build(output, archive=True):
                  'schedules.py','credential_vault.py'):
         copy(ROOT/name,app/name)
     for name in ('desktop_control.py','weekly_control.py','register_weekly.ps1','course_session.py','group_watch.py',
-                 'burst_queue.py','ikuns_quiz.py','ikuns_vote.py','activity_trace.py','process_lifecycle.py','process_catalog.ps1','login_control.py','group_config.py'):
+                 'burst_queue.py','ikuns_quiz.py','ikuns_vote.py','activity_trace.py','process_lifecycle.py','process_catalog.ps1','login_control.py','group_config.py',
+                 'question_capture.py','question_extract.py','ocr_engine.py','ocr_preview.py'):
         copy(ROOT/'android-notifier'/name,app/'android-notifier'/name)
     for name in ('launcher.py','first_run.py','package_check.py'):
         copy(HERE/name,app/'android-notifier'/name)
@@ -77,6 +80,7 @@ def build(output, archive=True):
         shutil.copytree(PYTHON/name,payload/'python'/name,
                         ignore=shutil.ignore_patterns('__pycache__','*.pyc','site-packages','test','tests','idle_test'))
     shutil.copytree(LLAMA,payload/'vendor/llama')
+    shutil.copytree(ocr_runtime,payload/'vendor/ocr-runtime',ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
     for name in ('adb.exe','AdbWinApi.dll','AdbWinUsbApi.dll','libwinpthread-1.dll','NOTICE.txt','source.properties'):
         copy(ADB/name,payload/'vendor/adb'/name)
     copy(WEIGHTS,payload/'models/chat-verified.gguf')

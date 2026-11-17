@@ -1,0 +1,22 @@
+# Windows x64 / CPython 3.14. Pinned CPU runtime; the RapidOCR wheel includes models.
+rapidocr==3.10.0
+onnxruntime==1.32.0
+Pillow==13.0.0
+numpy==2.5.5
+opencv-python-headless==5.0.0.93
+pyclipper==1.4.0
+Shapely==2.2.0
+PyYAML==6.0.3
+six==1.17.0
+tqdm==4.70.1
+omegaconf==2.4.0
+requests==2.34.2
+colorlog==6.12.0
+flatbuffers==25.12.19
+packaging==26.3
+protobuf==7.36.2
+colorama==0.4.6
+charset-normalizer==3.5.2
+idna==3.20
+urllib3==2.8.0
+certifi==2026.10.23

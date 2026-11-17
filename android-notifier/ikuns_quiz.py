@@ -306,6 +306,9 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
     def guard():
         if stop.is_set() or (DATA/"stop").exists() or time.time() >= deadline:
             raise TimeoutError("处理时段已结束")
+        from group_watch import quiz_enabled, vote_enabled
+        if not (vote_enabled() if adapter is not None else quiz_enabled()):
+            raise InterruptedError('投票自动提交已关闭' if adapter is not None else '练习自动提交已关闭')
     def view(opening=False):
         until = min(deadline,time.time()+3)
         while True:
@@ -483,6 +486,7 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
                     raise ValueError('勾选时投票已变化')
         else:
             for click_try in range(3):
+                guard()
                 if select_choice(serial,root,current,choices[0]):
                     break
                 root,current=stable_question(view())
@@ -556,6 +560,7 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
             db.execute("CREATE TABLE IF NOT EXISTS group_submission_sources(receipt TEXT PRIMARY KEY,identity TEXT)")
             db.execute("INSERT OR REPLACE INTO group_submission_sources VALUES(?,?)",(receipt,identity))
         attempted=True
+        guard()  # Re-read switches after persisting the uncertain-attempt guard.
         tap(serial,submits[0])
         update("已点提交 · 等待回执")
         confirmed=False

@@ -1,6 +1,6 @@
 # 源码与构建
 
-需要 Windows x64、含 Tk 的 Python 3.14，以及 Android SDK build-tools、android.jar、JDK（构建两个辅助 APK）。运行时代码只使用 Python 标准库，无 pip 依赖。先阅读 [安装流程](INSTALL.md) 和 [验证范围](VERIFICATION-2026-11-06.md)。
+需要 Windows x64、含 Tk 与 pip 的 Python 3.14，以及 Android SDK build-tools、android.jar、JDK（构建两个辅助 APK）。OCR 开发版新增 RapidOCR、ONNX Runtime CPU 和 Pillow 等依赖，版本固定在 `android-notifier/packaging/ocr-requirements.txt`；构建器将它们独立装入并校验 `vendor/ocr-runtime`，随包携带模型与组件许可证，不修改系统 Python 依赖。先阅读 [安装流程](INSTALL.md) 和 [验证范围](VERIFICATION-2026-11-06.md)。
 
 ## 准备构建输入
 
@@ -17,6 +17,18 @@ python android-notifier/packaging/build_package.py --output D:\Release\Chaoxing-
 ```
 
 输出目录必须不存在。构建器使用明确的文件清单，拒绝私有 runtime、DPAPI、数据库和密钥文件。构建后仍须人工核对源码、知识库及许可证；白名单不等于任意文件内容都可公开。
+
+OCR 单独开发与离线验收（不启动接收端、MuMu 或答题模型）：
+
+```powershell
+python android-notifier/packaging/prepare_ocr.py
+$env:CHAOXING_OCR_INTEGRATION='1'
+python -m unittest discover -s android-notifier -p "test_ocr_preview.py"
+Remove-Item Env:CHAOXING_OCR_INTEGRATION
+python android-notifier/ocr_preview.py
+```
+
+实际 OCR 测试只使用现场生成的合成题图。预览窗口提供原图标注、题干、选项和核对提示；不会作答或提交。当前页读取需本人打开随堂练习，关闭两类自动提交并停止接收端，避免监看切换页面。首版不自动滚动，不支持公式/表格/图形理解；缺字、低可信度、缺项与乱序显示待核对。截图和识别内容默认不持久保存，测试证据仅写到私有 `runtime/ocr-test`；CLI 显式指定 `--image 图片路径 --output 结果.json` 才导出结果。公开 v0.1.6 包尚不包含此功能。
 
 ## 联网发行 ZIP
 
