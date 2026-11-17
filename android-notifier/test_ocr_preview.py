@@ -117,6 +117,10 @@ class OCRIntegrationTests(unittest.TestCase):
             timer.cancel()
         self.assertTrue(children)
         self.assertTrue(all(c.poll() is not None for c in children))
+        self.assertTrue(all(not Path(c.args[-1]).exists() for c in children))
+        if sys.prefix != sys.base_prefix:
+            self.assertTrue(all(Path(c.args[0]).parent == Path(sys._base_executable).parent
+                                for c in children))
 
     def test_blank_and_corrupt_input(self):
         from PIL import Image

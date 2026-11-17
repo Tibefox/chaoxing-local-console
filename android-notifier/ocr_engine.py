@@ -1,6 +1,7 @@
 """Offline CPU OCR in a cancellable child process; no application input actions."""
 from io import BytesIO
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -57,6 +58,23 @@ def file_capture(path):
     return Capture(path.read_bytes())
 
 
+def worker_command(folder):
+    python = Path(sys.executable)
+    if python.name.lower() == 'pythonw.exe':
+        python = python.with_name('python.exe')
+    worker_args = [str(Path(__file__)), '--worker', str(folder)]
+    if os.name == 'nt' and sys.prefix != sys.base_prefix:
+        # The Windows venv executable is a redirector: killing it can leave the
+        # actual OCR process alive. Start the base interpreter directly, with
+        # this environment's import paths, so Popen owns the real worker.
+        python = Path(sys._base_executable).with_name('python.exe')
+        bootstrap = ('import json,runpy,sys;sys.path[:]=json.loads(sys.argv[1]);'
+                     'sys.argv=sys.argv[2:];runpy.run_path(sys.argv[0],run_name="__main__")')
+        return [str(python), '-B', '-X', 'utf8', '-c', bootstrap,
+                json.dumps(sys.path), *worker_args]
+    return [str(python), '-B', '-X', 'utf8', *worker_args]
+
+
 def run_worker(request, cancel, timeout):
     """Transient files are removed on success, failure, cancellation and timeout."""
     initial_epoch = control_epoch()
@@ -65,12 +83,8 @@ def run_worker(request, cancel, timeout):
         request_path = folder / 'request.json'
         request['image'].save(folder / 'input.png')
         request_path.write_text(json.dumps({'crops': request['crops']}), encoding='utf-8')
-        python = Path(sys.executable)
-        if python.name.lower() == 'pythonw.exe':
-            python = python.with_name('python.exe')
         with (folder / 'worker.log').open('wb') as log:
-            process = subprocess.Popen([str(python), '-B', '-X', 'utf8', str(Path(__file__)),
-                                        '--worker', str(folder)], stdout=log, stderr=log,
+            process = subprocess.Popen(worker_command(folder), stdout=log, stderr=log,
                                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             deadline = time.monotonic() + timeout
             try:
