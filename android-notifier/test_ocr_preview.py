@@ -68,6 +68,9 @@ class OCRIntegrationTests(unittest.TestCase):
         with self.assertRaises(ValueError):offset(frames[0],frames[2])
         repeat=Image.new('RGB',(400,700),'white')
         with self.assertRaises(ValueError):offset(frames[0],repeat)
+        periodic=np.tile(rng.integers(0,256,(100,400,3),dtype=np.uint8),(7,1,1))
+        with self.assertRaisesRegex(ValueError,'唯一衔接'):
+            offset(Image.fromarray(periodic),Image.fromarray(np.roll(periodic,-50,axis=0)))
         root=ET.Element('hierarchy',window='fixed')
         ET.SubElement(root,'node',{'class':'android.webkit.WebView','bounds':'[0,0][400,700]'})
         def frame(image):
@@ -82,11 +85,23 @@ class OCRIntegrationTests(unittest.TestCase):
         with patch('scroll_capture.MAX_SCREENS',2):
             result=capture_long(lambda cancel:next(sequence),lambda *args:moves.append('scroll'),threading.Event())
         self.assertEqual(len(moves),1);self.assertIn('上限',result.scan['reason'])
+        with patch('scroll_capture.MAX_SECONDS',0):
+            result=capture_long(lambda cancel:frame(frames[0]),lambda *args:self.fail('must not scroll'),threading.Event())
+        self.assertIn('时间上限',result.scan['reason'])
         stop=threading.Event();calls=[]
         def read(cancel):calls.append('read');return frame(frames[0])
         with self.assertRaises(InterruptedError):
             capture_long(read,lambda *args:stop.set(),stop)
         self.assertEqual(calls,['read'])
+        from copy import deepcopy
+        for before_text,after_text in [('[单选题] 第一题','[单选题] 第二题'),('原文字','已变化')]:
+            first,second=frame(frames[0]),frame(frames[0])
+            first.tree=deepcopy(root);second.tree=deepcopy(root)
+            ET.SubElement(first.tree[0],'node',{'text':before_text})
+            ET.SubElement(second.tree[0],'node',{'text':after_text})
+            sequence=iter([first,second])
+            with self.assertRaisesRegex(ValueError,'结果已丢弃'):
+                capture_long(lambda cancel:next(sequence),lambda *args:None,threading.Event())
 
     def test_long_image_tiled_ocr_preserves_prompt_and_all_options(self):
         from PIL import Image,ImageDraw,ImageFont

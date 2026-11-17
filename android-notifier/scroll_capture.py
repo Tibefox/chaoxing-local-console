@@ -1,11 +1,17 @@
 """Bounded downward capture and pixel-verified overlap; never selects answers."""
 from io import BytesIO
+import re
 import time
 
-from question_capture import Capture, document
+from question_capture import Capture, document, fingerprint, text
 
 MAX_SCREENS = 8
 MAX_SECONDS = 90
+
+
+def question_titles(root):
+    return {text(n) for n in root.iter('node') if n.get('visible') != 'false'
+            and re.search(r'[\[【(（]\s*(?:单选题|判断题|多选题)\s*[\]】)）]', text(n))}
 
 
 def offset(previous, current):
@@ -47,9 +53,14 @@ def offset(previous, current):
 def capture_long(capture, scroll, cancel, progress=lambda message: None):
     """Callbacks own device guards; this layer only assembles matching pixels."""
     from ocr_engine import image_from_bytes, load_dependencies, MAX_PIXELS
+    if cancel.is_set():
+        raise InterruptedError('已取消滚动识别')
     Image = load_dependencies()
     started = time.monotonic()
     first = last = capture(cancel)
+    identity = question_titles(first.tree)
+    if len(identity) > 1:
+        raise ValueError('当前屏幕包含多道题，请先打开单道题再滚动识别')
     original = image_from_bytes(first.png)
     _, viewport = document(first.tree, original.size)
     merged = previous = original.crop(viewport)
@@ -68,16 +79,22 @@ def capture_long(capture, scroll, cancel, progress=lambda message: None):
         following = capture(cancel)
         if following.tree.get('window') != first.tree.get('window'):
             raise ValueError('滚动期间前台窗口变化，结果已丢弃')
+        titles = question_titles(following.tree)
+        if len(titles) > 1 or (titles and identity and titles != identity):
+            raise ValueError('滚动期间出现另一道题，结果已丢弃')
         image = image_from_bytes(following.png)
         _, next_viewport = document(following.tree, image.size)
         if next_viewport != viewport:
             raise ValueError('滚动期间题目区域变化，结果已丢弃')
         current = image.crop(viewport)
         shift = offset(previous, current)
-        last = following
         if not shift:
+            if fingerprint(last.tree) != fingerprint(following.tree):
+                raise ValueError('页面文字变化但未确认滚动，结果已丢弃')
+            last = following
             reason = '页面不再向下移动，请人工核对是否已到题目末尾'
             break
+        last = following
         if merged.width*(merged.height+shift) > MAX_PIXELS:
             reason = '达到长图尺寸上限，后面可能仍有内容'
             break
