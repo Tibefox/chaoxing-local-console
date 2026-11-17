@@ -26,6 +26,8 @@ $env:CHAOXING_OCR_INTEGRATION='1'
 python -m unittest discover -s android-notifier -p "test_ocr_preview.py"
 Remove-Item Env:CHAOXING_OCR_INTEGRATION
 python android-notifier/ocr_preview.py
+# 只读取已有正式安装的配对配置，连接本人已打开的 MuMu/学习通：
+python android-notifier/ocr_preview.py --installation D:\Apps\ChaoxingConsole
 ```
 
 实际 OCR 测试只使用现场生成的合成题图。预览窗口提供原图标注、题干、选项和核对提示；不会作答或提交。当前页读取需本人打开随堂练习，关闭两类自动提交并停止接收端，避免监看切换页面。首版不自动滚动，不支持公式/表格/图形理解；缺字、低可信度、缺项与乱序显示待核对。截图和识别内容默认不持久保存，测试证据仅写到私有 `runtime/ocr-test`；CLI 显式指定 `--image 图片路径 --output 结果.json` 才导出结果。公开 v0.1.6 包尚不包含此功能。

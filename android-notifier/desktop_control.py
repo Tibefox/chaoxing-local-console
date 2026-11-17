@@ -405,14 +405,8 @@ def main():
             ocr_window.window.lift()
             return
         from ocr_preview import dialog as ocr_dialog
-        def current_serial():
-            from group_watch import quiz_enabled, vote_enabled
-            if quiz_enabled() or vote_enabled():
-                raise RuntimeError('请先关闭练习和投票自动提交，再预览当前题目')
-            if receiver():
-                raise RuntimeError('请先停止接收端，再本人打开题目预览，避免监看线程切换页面；也可导入图片')
-            return connect(vm_info())  # Never starts MuMu, the receiver or the model.
-        ocr_window = ocr_dialog(win, current_serial)
+        from preview_device import ReadOnlyDevice
+        ocr_window = ocr_dialog(win, ReadOnlyDevice(ROOT.parent).capture)
     from weekly_control import dialog, rules, DAYS
     add("每周时段", lambda: dialog(win))
     account_bar = ttk.Frame(frame)

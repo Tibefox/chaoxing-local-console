@@ -8,7 +8,6 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 
 from ocr_engine import file_capture, load_dependencies, recognize
-from question_capture import capture_current
 
 
 def format_result(result):
@@ -105,7 +104,7 @@ class Preview:
 
     def open_current(self):
         if self.current:
-            self.start(lambda: capture_current(self.current()))
+            self.start(lambda: self.current(self.cancel))
 
     def pump(self):
         if self.closed:
@@ -166,6 +165,7 @@ def dialog(parent, current):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='图片文字识别预览，不操作课堂活动')
     parser.add_argument('--image', type=Path)
+    parser.add_argument('--installation', type=Path, help='只读取已有正式安装的配对与关闭状态，不启动接收端或模型')
     parser.add_argument('--output', type=Path, help='将识别结果保存到本人指定的本地 JSON 文件')
     args = parser.parse_args()
     if args.output:
@@ -174,7 +174,13 @@ if __name__ == '__main__':
         result, _ = recognize(file_capture(args.image))
         args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
     else:
-        preview = Preview()
+        current = None
+        if args.installation:
+            from preview_device import ReadOnlyDevice
+            current = ReadOnlyDevice(args.installation).capture
+        preview = Preview(current=current)
+        if current:
+            preview.status.set('请本人打开 MuMu 中的随堂练习，再点“识别当前题目”；不会自动打开或提交活动。')
         if args.image:
             preview.start(lambda: file_capture(args.image))
         preview.window.mainloop()

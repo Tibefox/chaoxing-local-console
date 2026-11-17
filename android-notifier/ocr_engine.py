@@ -110,6 +110,8 @@ def recognize(capture, cancel=None, timeout=45):
         blocks.extend(TextBlock(row['text'], tuple(row['box']), 'ocr', row['confidence']) for row in raw)
     if cancel.is_set():
         raise InterruptedError('已取消识别')
+    if capture.validate is not None:
+        capture.validate()
     if not blocks:
         warnings.append('未识别到文字；图形、公式和手写题暂不支持')
     result = extract(blocks, warnings)

@@ -29,11 +29,13 @@ def fingerprint(root):
 class Capture:
     png: bytes
     tree: object = None
+    validate: object = None
 
 
-def capture_current(serial, snapshot=None, shell=None):
+def capture_current(serial, snapshot=None, shell=None, guard=lambda: None):
     if snapshot is None or shell is None:
         from group_watch import snapshot, shell
+    guard()
     before = snapshot(serial)
     titles = [text(n) for n in before.iter('node')
               if n.get('resource-id') == APP + ':id/toolbar_tv_title']
@@ -41,7 +43,9 @@ def capture_current(serial, snapshot=None, shell=None):
         raise ValueError('请本人先打开随堂练习题目页面，再识别当前题目')
     if any(n.get('resource-id') == APP + ':id/btnCancel' for n in before.iter('node')):
         raise ValueError('页面被提醒遮挡，请本人关闭提醒后重试')
+    guard()
     png = shell(serial, 'exec-out', 'screencap', '-p')
+    guard()
     after = snapshot(serial)
     if fingerprint(before) != fingerprint(after):
         raise ValueError('截图期间页面变化，请等页面稳定后重新识别')

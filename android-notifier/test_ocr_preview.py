@@ -140,6 +140,28 @@ class OCRIntegrationTests(unittest.TestCase):
         self.assertIn('代码量',result['options']['B'])
         self.assertEqual({b['source'] for b in result['blocks']},{'native','ocr'})
 
+    def test_current_button_uses_capture_callback_without_selection_or_submission(self):
+        png=self.fixture();calls=[]
+        def current(cancel):
+            calls.append('capture')
+            return Capture(png,validate=lambda:calls.append('validate'))
+        preview=Preview(current=current)
+        try:
+            self.assertNotIn('disabled',preview.current_button.state())
+            preview.current_button.invoke()
+            deadline=time.monotonic()+55
+            while preview.busy and time.monotonic()<deadline:
+                preview.window.update();time.sleep(.05)
+            self.assertIsNotNone(preview.result,preview.status.get())
+            self.assertEqual(calls,['capture','validate'])
+            self.assertEqual(list(preview.result['options']),list('ABCD'))
+        finally:preview.close()
+
+    def test_capture_validation_failure_does_not_display_stale_result(self):
+        def changed():raise ValueError('题目变化')
+        with self.assertRaisesRegex(ValueError,'题目变化'):
+            recognize(Capture(self.fixture(),validate=changed))
+
     def test_image_prompt_with_native_options(self):
         from PIL import Image, ImageDraw, ImageFont
         import xml.etree.ElementTree as ET
