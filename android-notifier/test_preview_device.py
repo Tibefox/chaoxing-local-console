@@ -143,5 +143,31 @@ class DeviceTests(unittest.TestCase):
         with patch('ocr_engine.image_from_bytes',side_effect=[Image(b'old'),Image(b'new')]):
             with self.assertRaisesRegex(ValueError,'图片变化'):capture.validate()
 
+    def test_long_scroll_only_drags_inside_verified_document(self):
+        self.page[-1][-1].set('bounds','[30,650][900,690]')
+        capture=self.device.capture(Event());capture.validate=lambda:None
+        original=self.device.run
+        gestures=[]
+        def run(command,timeout=12):
+            if 'swipe' in command:gestures.append(list(map(str,command)));return b''
+            return original(command,timeout)
+        self.device.run=run
+        with patch('ocr_engine.image_from_bytes') as image, patch.object(self.device.cancel,'wait',return_value=False):
+            image.return_value.size=(1000,700)
+            self.device.scroll_down(capture,(0,70,1000,700))
+        self.assertEqual(len(gestures),1)
+        self.assertEqual(gestures[0][3:],['shell','input','touchscreen','swipe','500','542','500','227','400'])
+
+    def test_scroll_blocks_button_start_and_changed_page(self):
+        capture=self.device.capture(Event());capture.validate=lambda:None
+        with patch('ocr_engine.image_from_bytes') as image:
+            image.return_value.size=(1000,700)
+            with self.assertRaisesRegex(ValueError,'操作控件'):
+                self.device.scroll_down(capture,(0,70,1000,700))
+            self.page[0].set('text','其他页面')
+            with self.assertRaisesRegex(ValueError,'页面变化'):
+                self.device.scroll_down(capture,(0,70,1000,700))
+        self.assertFalse(any('swipe' in c for c in self.commands))
+
 
 if __name__ == '__main__':unittest.main()

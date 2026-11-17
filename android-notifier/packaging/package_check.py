@@ -16,7 +16,7 @@ import ikuns_quiz,ikuns_vote,desktop_control,login_control,credential_vault
 from group_config import GROUP, matches
 import group_watch
 import course_session,app_runtime
-import ocr_engine,ocr_preview,question_capture,question_extract,preview_device
+import ocr_engine,ocr_preview,question_capture,question_extract,preview_device,scroll_capture
 
 def main():
     assert Path(sys.executable).resolve().is_relative_to(ROOT.parent)

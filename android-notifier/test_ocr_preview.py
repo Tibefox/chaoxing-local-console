@@ -55,6 +55,75 @@ class PreviewContractTests(unittest.TestCase):
 @unittest.skipUnless(os.name == 'nt' and os.environ.get('CHAOXING_OCR_INTEGRATION') == '1',
                      'Run separately in the isolated Windows OCR environment')
 class OCRIntegrationTests(unittest.TestCase):
+    def test_scroll_overlap_stitch_limit_cancel_and_ambiguous_frames(self):
+        import numpy as np
+        import xml.etree.ElementTree as ET
+        from PIL import Image
+        from scroll_capture import offset, capture_long
+        rng=np.random.default_rng(42)
+        full=Image.fromarray(rng.integers(0,256,(2100,400,3),dtype=np.uint8))
+        frames=[full.crop((0,y,400,y+700)) for y in (0,350,700)]
+        self.assertEqual(offset(frames[0],frames[0]),0)
+        self.assertEqual(offset(frames[0],frames[1]),350)
+        with self.assertRaises(ValueError):offset(frames[0],frames[2])
+        repeat=Image.new('RGB',(400,700),'white')
+        with self.assertRaises(ValueError):offset(frames[0],repeat)
+        root=ET.Element('hierarchy',window='fixed')
+        ET.SubElement(root,'node',{'class':'android.webkit.WebView','bounds':'[0,0][400,700]'})
+        def frame(image):
+            data=BytesIO();image.save(data,format='PNG')
+            return Capture(data.getvalue(),root,validate=lambda:None)
+        sequence=iter([frame(im) for im in [*frames,frames[-1]]]);moves=[]
+        result=capture_long(lambda cancel:next(sequence),lambda *args:moves.append('scroll'),threading.Event())
+        self.assertEqual(result.scan['screens'],3)
+        self.assertEqual(image_from_bytes(result.png).tobytes(),full.crop((0,0,400,1400)).tobytes())
+        self.assertEqual(len(moves),3)
+        sequence=iter([frame(im) for im in frames]);moves=[]
+        with patch('scroll_capture.MAX_SCREENS',2):
+            result=capture_long(lambda cancel:next(sequence),lambda *args:moves.append('scroll'),threading.Event())
+        self.assertEqual(len(moves),1);self.assertIn('上限',result.scan['reason'])
+        stop=threading.Event();calls=[]
+        def read(cancel):calls.append('read');return frame(frames[0])
+        with self.assertRaises(InterruptedError):
+            capture_long(read,lambda *args:stop.set(),stop)
+        self.assertEqual(calls,['read'])
+
+    def test_long_image_tiled_ocr_preserves_prompt_and_all_options(self):
+        from PIL import Image,ImageDraw,ImageFont
+        image=Image.new('RGB',(1100,2700),'white');draw=ImageDraw.Draw(image)
+        font=ImageFont.truetype(r'C:\Windows\Fonts\msyh.ttc',36)
+        draw.text((40,40),'[单选题] 软件测试的主要目的是什么？',font=font,fill='black')
+        for i in range(15):
+            draw.text((40,130+i*95),f'第{i+1}行：请阅读题目中的文字，仔细核对完整内容。',font=font,fill='black')
+        for y,value in [(1800,'A. 发现软件中的错误'),(2050,'B. 增加程序代码量'),
+                        (2300,'C. 替代需求分析'),(2550,'D. 减少用户沟通')]:
+            draw.text((40,y),value,font=font,fill='black')
+        data=BytesIO();image.save(data,format='PNG')
+        result,_=recognize(Capture(data.getvalue(),scan={'screens':3,'warnings':['仅预览']}))
+        self.assertEqual(list(result['options']),list('ABCD'))
+        self.assertIn('软件测试',result['prompt']);self.assertIn('错误',result['options']['A'])
+        self.assertEqual(result['scan']['screens'],3)
+        self.assertGreater(result['size'][1],2000)
+
+    def test_long_button_progress_does_not_enable_other_actions(self):
+        calls=[]
+        def scan(cancel,progress):
+            calls.append('scan');progress('正在采集第二屏')
+            return Capture(self.fixture(),scan={'screens':2,'warnings':['核对接缝']})
+        preview=Preview(current_long=scan)
+        try:
+            preview.long_button.invoke()
+            self.assertIn('disabled',preview.long_button.state())
+            deadline=time.monotonic()+55
+            while preview.busy and time.monotonic()<deadline:
+                preview.window.update();time.sleep(.05)
+            self.assertIsNotNone(preview.result,preview.status.get())
+            self.assertEqual(calls,['scan'])
+            self.assertEqual(preview.result['scan']['screens'],2)
+            self.assertNotIn('disabled',preview.long_button.state())
+            self.assertIn('disabled',preview.current_button.state())
+        finally:preview.close()
+
     @staticmethod
     def fixture():
         from ocr_engine import load_dependencies

@@ -30,6 +30,7 @@ class Capture:
     png: bytes
     tree: object = None
     validate: object = None
+    scan: object = None
 
 
 def capture_current(serial, snapshot=None, shell=None, guard=lambda: None):
@@ -54,8 +55,8 @@ def capture_current(serial, snapshot=None, shell=None, guard=lambda: None):
     return Capture(png, before)
 
 
-def regions(root, size):
-    """Return native text plus fully visible image crops, conservatively."""
+def document(root, size):
+    """Resolve one document and the intersection of its visible wrappers."""
     width, height = size
     webviews = [n for n in root.iter('node') if n.get('class') == 'android.webkit.WebView'
                 and n.get('visible') != 'false']
@@ -72,6 +73,12 @@ def regions(root, size):
                 min(width, *(b[2] for b in boxes)), min(height, *(b[3] for b in boxes)))
     if viewport[0] >= viewport[2] or viewport[1] >= viewport[3]:
         raise ValueError('无法核对题目区域')
+    return web, viewport
+
+
+def regions(root, size):
+    """Return native text plus fully visible image crops, conservatively."""
+    web, viewport = document(root, size)
     images, native, warnings = [], [], []
     for n in web.iter('node'):
         if n.get('package') != APP or n.get('visible') == 'false' or n is web:

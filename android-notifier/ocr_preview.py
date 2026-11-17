@@ -13,7 +13,8 @@ from ocr_engine import file_capture, load_dependencies, recognize
 def format_result(result):
     options = '\n\n'.join(f'{k}. {v}' for k, v in result['options'].items())
     warnings = '\n'.join('• ' + w for w in result['warnings']) or '文字结构已识别，请对照原图核对。'
-    return (f"{result['notice']}\n\n题干\n{result['prompt'] or '（未读到）'}\n\n"
+    scan = f"\n向下采集 {result['scan']['screens']} 屏；请核对长图接缝。" if result.get('scan') else ''
+    return (f"{result['notice']}{scan}\n\n题干\n{result['prompt'] or '（未读到）'}\n\n"
             f"选项\n{options or '（未读到）'}\n\n核对提示\n{warnings}\n\n"
             f"用时 {result.get('seconds', 0):.2f} 秒\n\n识别来源\n" +
             '\n'.join(f"[{i}] {'控件文字' if b['source']=='native' else 'OCR'} " +
@@ -22,7 +23,7 @@ def format_result(result):
 
 
 class Preview:
-    def __init__(self, parent=None, current=None):
+    def __init__(self, parent=None, current=None, current_long=None):
         if parent is None:
             try:
                 import ctypes
@@ -33,6 +34,7 @@ class Preview:
         self.window.title('图片题文字识别 · 仅预览')
         self.window.geometry('1100x740')
         self.current = current
+        self.current_long = current_long
         self.cancel = threading.Event()
         self.events = queue.Queue()
         self.busy = False
@@ -51,6 +53,10 @@ class Preview:
         self.current_button.pack(side='left', padx=8)
         if current is None:
             self.current_button.state(['disabled'])
+        self.long_button = ttk.Button(bar, text='滚动识别长题', command=self.open_long)
+        self.long_button.pack(side='left', padx=8)
+        if current_long is None:
+            self.long_button.state(['disabled'])
         self.cancel_button = ttk.Button(bar, text='取消识别', command=self.cancel.set)
         self.cancel_button.pack(side='left')
         self.cancel_button.state(['disabled'])
@@ -62,7 +68,10 @@ class Preview:
         panes.add(left, weight=1); panes.add(right, weight=1)
         self.layout_timer = self.window.after(50, lambda: panes.sashpos(0, max(250, panes.winfo_width() // 2)) if not self.closed else None)
         self.canvas = tk.Canvas(left, background='#e8e8e8', highlightthickness=0)
-        self.canvas.pack(fill='both', expand=True)
+        image_scroll = ttk.Scrollbar(left, command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=image_scroll.set)
+        image_scroll.pack(side='right', fill='y')
+        self.canvas.pack(side='left', fill='both', expand=True)
         self.canvas.bind('<Configure>', lambda _: self.draw())
         self.output = tk.Text(right, wrap='word', font=('Microsoft YaHei UI', 11), state='disabled')
         scroll = ttk.Scrollbar(right, command=self.output.yview)
@@ -83,7 +92,9 @@ class Preview:
         self.busy = True; self.cancel.clear()
         self.result = None; self.image = None; self.capture = None
         self.set_text(''); self.canvas.delete('all')
+        self.canvas.yview_moveto(0)
         self.file_button.state(['disabled']); self.current_button.state(['disabled'])
+        self.long_button.state(['disabled'])
         self.cancel_button.state(['!disabled'])
         self.status.set('正在读取与识别，可随时取消…')
         def work():
@@ -106,15 +117,29 @@ class Preview:
         if self.current:
             self.start(lambda: self.current(self.cancel))
 
+    def open_long(self):
+        if self.current_long:
+            def produce():
+                capture = self.current_long(self.cancel, lambda message: self.events.put(('progress', message)))
+                self.events.put(('progress', '正在识别拼接长图，可随时取消…'))
+                return capture
+            self.start(produce)
+
     def pump(self):
         if self.closed:
             return
         while not self.events.empty():
             kind, value = self.events.get()
+            if kind == 'progress':
+                if not self.closing:
+                    self.status.set(value)
+                continue
             self.busy = False
             self.file_button.state(['!disabled'])
             if self.current:
                 self.current_button.state(['!disabled'])
+            if self.current_long:
+                self.long_button.state(['!disabled'])
             self.cancel_button.state(['disabled'])
             if kind == 'result' and not self.cancel.is_set():
                 self.capture, self.result, self.image = value
@@ -130,9 +155,11 @@ class Preview:
         load_dependencies()
         from PIL import ImageTk
         image = self.image.copy()
-        image.thumbnail((max(1, self.canvas.winfo_width()), max(1, self.canvas.winfo_height())))
+        height = self.image.height if self.capture and self.capture.scan else max(1, self.canvas.winfo_height())
+        image.thumbnail((max(1, self.canvas.winfo_width()), height))
         self.photo = ImageTk.PhotoImage(image, master=self.window)
         self.canvas.delete('all'); self.canvas.create_image(0, 0, anchor='nw', image=self.photo)
+        self.canvas.configure(scrollregion=(0, 0, image.width, image.height))
         scale = image.width / self.image.width
         for i, b in enumerate(self.result['blocks'], 1):
             x1, y1, x2, y2 = [v * scale for v in b['box']]
@@ -160,8 +187,8 @@ class Preview:
         finish()
 
 
-def dialog(parent, current):
-    return Preview(parent, current)
+def dialog(parent, current, current_long=None):
+    return Preview(parent, current, current_long)
 
 
 if __name__ == '__main__':
@@ -177,12 +204,14 @@ if __name__ == '__main__':
         args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
     else:
         current = None
+        current_long = None
         if args.installation:
             from preview_device import ReadOnlyDevice
-            current = ReadOnlyDevice(args.installation).capture
-        preview = Preview(current=current)
+            device = ReadOnlyDevice(args.installation)
+            current, current_long = device.capture, device.capture_long
+        preview = Preview(current=current, current_long=current_long)
         if current:
-            preview.status.set('请本人打开 MuMu 中的随堂练习，再点“识别当前题目”；不会自动打开或提交活动。')
+            preview.status.set('请本人打开题目；长题先停在题干开头，再点“滚动识别长题”（最多8屏，结束后停留末屏）。')
         if args.image:
             preview.start(lambda: file_capture(args.image))
         preview.window.mainloop()

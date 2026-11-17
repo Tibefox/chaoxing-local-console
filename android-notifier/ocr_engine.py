@@ -82,7 +82,7 @@ def run_worker(request, cancel, timeout):
         folder = Path(folder)
         request_path = folder / 'request.json'
         request['image'].save(folder / 'input.png')
-        request_path.write_text(json.dumps({'crops': request['crops']}), encoding='utf-8')
+        request_path.write_text(json.dumps({'crops': request['crops'], 'tiled': request.get('tiled', False)}), encoding='utf-8')
         with (folder / 'worker.log').open('wb') as log:
             process = subprocess.Popen(worker_command(folder), stdout=log, stderr=log,
                                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
@@ -118,9 +118,14 @@ def recognize(capture, cancel=None, timeout=45):
     if capture.tree is not None:
         native, crops, warnings = regions(capture.tree, image.size)
         warnings.append('仅识别当前屏幕，尚未核对屏幕外是否有题目内容')
+    if capture.scan:
+        from scroll_capture import tiles
+        crops = tiles(image.size)
+        warnings.extend(capture.scan['warnings'])
     blocks = list(native)
     if crops:
-        raw = run_worker({'image': image, 'crops': crops}, cancel, timeout)
+        raw = run_worker({'image': image, 'crops': crops, 'tiled': bool(capture.scan)}, cancel,
+                         max(timeout, 90) if capture.scan else timeout)
         blocks.extend(TextBlock(row['text'], tuple(row['box']), 'ocr', row['confidence']) for row in raw)
     if cancel.is_set():
         raise InterruptedError('已取消识别')
@@ -131,6 +136,8 @@ def recognize(capture, cancel=None, timeout=45):
     result = extract(blocks, warnings)
     result['seconds'] = round(time.monotonic() - begin, 3)
     result['size'] = image.size
+    if capture.scan:
+        result['scan'] = capture.scan
     return result, image
 
 
@@ -152,15 +159,20 @@ def worker(folder):
         request = json.loads((folder / 'request.json').read_text(encoding='utf-8'))
         blocks = []
         with Image.open(folder / 'input.png') as image:
-            for box in request['crops']:
+            for tile_index, box in enumerate(request['crops']):
                 output = engine(image.crop(tuple(box)))
                 if output.txts is None:
                     continue
                 for polygon, value, score in zip(output.boxes, output.txts, output.scores):
                     xs, ys = zip(*polygon)
-                    blocks.append({'text': value, 'confidence': float(score),
+                    blocks.append({'text': value, 'confidence': float(score), 'tile': tile_index,
                                    'box': [int(min(xs)) + box[0], int(min(ys)) + box[1],
                                            int(max(xs)) + box[0], int(max(ys)) + box[1]]})
+        if request.get('tiled'):
+            from scroll_capture import tile_blocks
+            blocks = tile_blocks(blocks, request['crops'])
+        else:
+            blocks = [{k:v for k,v in b.items() if k != 'tile'} for b in blocks]
         result = {'blocks': blocks}
     except Exception as exc:
         result = {'error': str(exc) if isinstance(exc, RuntimeError) else 'OCR 组件运行失败：' + type(exc).__name__}

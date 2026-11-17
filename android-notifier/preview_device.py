@@ -1,4 +1,4 @@
-"""Read an existing paired installation without importing its controller or solver."""
+"""Preview an existing paired installation; only long preview may drag downward."""
 import base64
 import json
 from pathlib import Path
@@ -9,7 +9,7 @@ import threading
 import time
 import xml.etree.ElementTree as ET
 
-from question_capture import APP, capture_current, fingerprint, regions
+from question_capture import APP, bounds, capture_current, fingerprint, regions, document
 
 READER = 'local.chaoxing.uiread'
 READ_COMMANDS = {
@@ -172,3 +172,37 @@ Select-Object Name,CommandLine) | ConvertTo-Json -Compress
             self.policy()
         capture.validate = validate
         return capture
+
+    def scroll_down(self, previous, viewport):
+        """One bounded drag inside the verified document; no taps or key events."""
+        self.quiet()
+        previous.validate()
+        fresh = self.snapshot(self.serial)
+        if fingerprint(fresh) != fingerprint(previous.tree):
+            raise ValueError('滚动前页面变化，已停止')
+        from ocr_engine import image_from_bytes
+        _, current_viewport = document(fresh, image_from_bytes(previous.png).size)
+        if current_viewport != viewport:
+            raise ValueError('滚动前题目区域变化，已停止')
+        left, top, right, bottom = viewport
+        if right-left < 240 or bottom-top < 400:
+            raise ValueError('题目区域太小，不能安全滚动')
+        x = (left+right)//2
+        start, end = top+int((bottom-top)*.75), top+int((bottom-top)*.25)
+        for node in fresh.iter('node'):
+            box = bounds(node)
+            if box and box[0] <= x <= box[2] and box[1] <= start <= box[3] and (
+                    node.get('editable') == 'true' or node.get('password') == 'true' or
+                    node.get('class') == 'android.widget.Button'):
+                raise ValueError('滚动起点有操作控件，请手动调整页面后重试')
+        self.policy()
+        # Deliberately separate from the read-command whitelist. Only this
+        # fixed-direction, geometry-checked gesture is exposed to long preview.
+        self.run([self.adb, '-s', self.serial, 'shell', 'input', 'touchscreen',
+                  'swipe', str(x), str(start), str(x), str(end), '400'])
+        if self.cancel.wait(.7):
+            raise InterruptedError('已取消滚动识别，页面停留在当前位置')
+
+    def capture_long(self, cancel, progress=lambda message: None):
+        from scroll_capture import capture_long
+        return capture_long(self.capture, self.scroll_down, cancel, progress)
