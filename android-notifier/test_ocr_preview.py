@@ -162,6 +162,12 @@ class OCRIntegrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'题目变化'):
             recognize(Capture(self.fixture(),validate=changed))
 
+    def test_closed_preview_has_no_pending_tk_callbacks(self):
+        preview=Preview()
+        preview.window.update()
+        preview.close()
+        self.assertEqual(preview.window.tk.call('after','info'),())
+
     def test_image_prompt_with_native_options(self):
         from PIL import Image, ImageDraw, ImageFont
         import xml.etree.ElementTree as ET

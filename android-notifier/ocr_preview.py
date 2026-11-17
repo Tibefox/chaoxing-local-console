@@ -60,7 +60,7 @@ class Preview:
         panes.pack(fill='both', expand=True, padx=10, pady=5)
         left, right = ttk.Frame(panes), ttk.Frame(panes)
         panes.add(left, weight=1); panes.add(right, weight=1)
-        self.window.after(50, lambda: panes.sashpos(0, max(250, panes.winfo_width() // 2)) if not self.closed else None)
+        self.layout_timer = self.window.after(50, lambda: panes.sashpos(0, max(250, panes.winfo_width() // 2)) if not self.closed else None)
         self.canvas = tk.Canvas(left, background='#e8e8e8', highlightthickness=0)
         self.canvas.pack(fill='both', expand=True)
         self.canvas.bind('<Configure>', lambda _: self.draw())
@@ -71,7 +71,7 @@ class Preview:
         ttk.Label(self.window, text='只读取与预览，不调用答题模型，不选择选项，不提交活动。关闭窗口后清除本次预览。',
                   padding=10).pack(anchor='w')
         self.window.protocol('WM_DELETE_WINDOW', self.close)
-        self.window.after(100, self.pump)
+        self.pump_timer = self.window.after(100, self.pump)
 
     def set_text(self, value):
         self.output.configure(state='normal'); self.output.delete('1.0', 'end')
@@ -122,7 +122,7 @@ class Preview:
                 self.status.set('识别完成 · 请核对原图' if self.result['status'] == 'recognized' else '识别完成 · 有内容需要核对')
             else:
                 self.status.set('已取消识别' if self.cancel.is_set() else str(value))
-        self.window.after(100, self.pump)
+        self.pump_timer = self.window.after(100, self.pump)
 
     def draw(self):
         if self.image is None:
@@ -151,6 +151,8 @@ class Preview:
                 self.window.after(100, finish)
                 return
             self.closed = True
+            for timer in (self.layout_timer, self.pump_timer):
+                self.window.after_cancel(timer)
             self.result = self.image = self.capture = self.photo = None
             while not self.events.empty():
                 self.events.get()
