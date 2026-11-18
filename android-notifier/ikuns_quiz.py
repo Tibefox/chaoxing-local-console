@@ -74,9 +74,7 @@ def outcome(root):
 
 
 def platform_answers(root):
-    _, receipt = quiz_result_footer(root)
-    if receipt is not None:
-        return receipt['answers']
+    # Verification must still see conflicting native evidence on unfamiliar result layouts.
     return [m[1] for t, _ in texts(root) if (m := OWN_ANSWER.fullmatch(t))]
 
 
