@@ -319,22 +319,22 @@ def wait_for_receipt(serial, db, receipt, chosen, handler, stop, deadline, windo
                 root = None
             if root is not None and alert(root) is None and root.get('window'):
                 words = texts(root)
-                same_window = window and window == root.get('window')
-                # A resumed pending attempt has no trusted window token yet.
-                resumed_card = window is None and title and any(t == title for t, _ in words)
-                if (same_window or resumed_card) and handler.is_quiz(root):
-                    final = handler.outcome(root)
-                    if final == '已提交':
-                        if handler.save_platform_receipt(db, receipt, root, chosen):
-                            return final
-                    elif final:
+                # The result or a native confirmation dialog can replace the submitting window.
+                # Keep the original immediate handshake. Later reads must retain the window or title.
+                immediate = bool(window) and polls <= 4
+                same_card = (window and window == root.get('window')) or (title and any(t == title for t, _ in words))
+                final = handler.outcome(root) if (immediate or same_card) and handler.is_quiz(root) else None
+                if final == '已提交':
+                    if handler.save_platform_receipt(db, receipt, root, chosen):
                         return final
-                    elif confirm_once and polls <= 4 and same_window:
-                        buttons = [n for t,n in words if t in {'确定','确认','确认提交'}]
-                        if len(buttons) == 1 and any(re.search(r'(是否|确定|确认).{0,8}提交',t)
-                                                     for t,_ in words if t != '确认提交'):
-                            confirm_once(buttons[0])
-                            confirm_once = None
+                elif final:
+                    return final
+                elif immediate and confirm_once:
+                    buttons = [n for t,n in words if t in {'确定','确认','确认提交'}]
+                    if len(buttons) == 1 and any(re.search(r'(是否|确定|确认).{0,8}提交',t)
+                                                 for t,_ in words if t != '确认提交'):
+                        confirm_once(buttons[0])
+                        confirm_once = None
         remaining = until - time.monotonic()
         if remaining > 0:
             stop.wait(min(.25 if polls < 4 else 1, remaining))
