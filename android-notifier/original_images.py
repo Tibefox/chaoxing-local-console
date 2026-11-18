@@ -4,7 +4,6 @@ from io import BytesIO
 import re
 import time
 import unicodedata
-import xml.etree.ElementTree as ET
 
 from question_capture import APP, Capture, bounds, document, fingerprint, text
 
@@ -216,28 +215,37 @@ def wait_for_activity(device, target, cancel):
 
 def read_gallery(device, cancel):
     from ocr_engine import image_from_bytes
-    stable = None
-    box = None
+    previous_pixels = None
+    box = window = frame_size = None
     for _ in range(8):
         if cancel.wait(.25):
             raise InterruptedError('已取消读取原图')
-        if device.activity_name() != VIEWER:
-            raise ValueError('未进入学习通原图查看器，已停止')
         if box is None:
-            data = device.read(device.serial, 'exec-out', 'uiautomator', 'dump', '/dev/tty')
-            begin, end = data.find(b'<?xml'), data.find(b'</hierarchy>')
-            if begin < 0 or end < begin:
-                continue
-            root = ET.fromstring(data[begin:end+12])
+            root = device.snapshot(device.serial)
+            focus = (root.get('window'), root.get('activity'))
+            if not focus[0] or focus[1] != VIEWER or (window and window != focus):
+                raise ValueError('原图查看器窗口已变化')
+            window = focus
+        elif device.focused_window() != window:
+            raise ValueError('原图查看器窗口已变化')
+
         image = image_from_bytes(device.read(device.serial, 'exec-out', 'screencap', '-p'))
-        box = box or gallery_region(root, image.size)
-        if box and device.activity_name() == VIEWER:
-            photo = image.crop(box)
-            if stable is not None and stable.size == photo.size and stable.tobytes() == photo.tobytes():
-                return photo
-            stable = photo
-        else:
-            stable = None
+        if device.focused_window() != window:
+            raise ValueError('原图查看器窗口已变化')
+        if box is None:
+            box = gallery_region(root, image.size)
+            if box is None:
+                continue
+            frame_size = image.size
+        elif image.size != frame_size:
+            raise ValueError('原图查看器尺寸已变化')
+
+        # Reuse geometry only between stability frames of this same viewer window.
+        photo = image.crop(box)
+        pixels = photo.tobytes()
+        if pixels == previous_pixels:
+            return photo
+        previous_pixels = pixels
     raise ValueError('原图尚未加载稳定，请重试')
 
 

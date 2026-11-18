@@ -14,7 +14,6 @@ from question_capture import APP, bounds, capture_current, fingerprint, regions,
 READER = 'local.chaoxing.uiread'
 READ_COMMANDS = {
     ('get-state',),
-    ('exec-out', 'uiautomator', 'dump', '/dev/tty'),
     ('shell', 'dumpsys', 'window'),
     ('shell', 'dumpsys', 'package', READER),
     ('exec-out', 'am', 'instrument', '-w', READER + '/.Reader'),

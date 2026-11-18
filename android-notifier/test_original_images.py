@@ -221,3 +221,52 @@ class MixedContentTests(TestCase):
         cancel.is_set.return_value = True
         with self.assertRaises(InterruptedError):
             wait_for_activity(device, VIEWER, cancel)
+
+
+class ViewerCaptureTests(TestCase):
+    def setUp(self):
+        from unittest.mock import Mock
+        from xml.etree.ElementTree import Element, SubElement
+        from original_images import APP, VIEWER
+
+        self.tree = Element('root', window='123', activity=VIEWER)
+        for name, box in [('ivImage', '[0,0][200,400]'), ('vpImage', '[0,0][200,400]'),
+                          ('bottom_bar', '[0,350][200,400]')]:
+            SubElement(self.tree, 'node', {'resource-id': APP + ':id/' + name, 'bounds': box})
+        self.device = Mock()
+        self.device.snapshot.return_value = self.tree
+        self.device.focused_window.return_value = ('123', VIEWER)
+        self.cancel = Mock()
+        self.cancel.wait.return_value = False
+
+    def read_frames(self, *frames):
+        from unittest.mock import patch
+        from original_images import read_gallery
+        with patch('ocr_engine.image_from_bytes', side_effect=frames):
+            return read_gallery(self.device, self.cancel)
+
+    def test_loading_rechecks_tree_then_reuses_crop_only_for_verified_frames(self):
+        from copy import deepcopy
+        from unittest.mock import Mock
+        from xml.etree.ElementTree import SubElement
+        from original_images import APP
+        loading = deepcopy(self.tree)
+        SubElement(loading, 'node', {'resource-id': APP + ':id/pbLoading', 'bounds': '[1,1][10,10]'})
+        self.device.snapshot.side_effect = [loading, self.tree]
+        frame = Mock(size=(200, 400))
+        frame.crop.return_value.tobytes.side_effect = [b'a', b'b', b'b']
+        self.assertIs(self.read_frames(frame, frame, frame, frame), frame.crop.return_value)
+        self.assertEqual(self.device.snapshot.call_count, 2)
+        self.assertEqual(frame.crop.call_count, 3)
+        frame.crop.assert_called_with((0, 0, 200, 350))
+
+    def test_same_activity_with_different_window_or_frame_size_is_rejected(self):
+        from unittest.mock import Mock
+        from original_images import VIEWER
+        frame = Mock(size=(200, 400))
+        self.device.focused_window.side_effect = [('123', VIEWER), ('456', VIEWER)]
+        with self.assertRaisesRegex(ValueError, '窗口'):
+            self.read_frames(frame)
+        self.device.focused_window.side_effect = None
+        with self.assertRaisesRegex(ValueError, '尺寸'):
+            self.read_frames(frame, Mock(size=(400, 200)))
