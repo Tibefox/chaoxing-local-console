@@ -41,16 +41,16 @@ class NavigationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'通知转发'):g.recover_closed_app('serial',Event(),lambda _:None)
             self.assertNotIn('am',shell.call_args.args)
 
-    def test_bracket_variants_exact_only(self):
-        self.assertTrue(g.target_chat(tree(('lv_chat_his',''),('tvTitle2','软件工程（唐班）'))))
-        for name in ['ikuns','软件工程(唐班)2','软件工程(其他班)']:
+    def test_normalized_target_exact_only(self):
+        self.assertTrue(g.target_chat(tree(('lv_chat_his',''),('tvTitle2','ｉｋｕｎｓ'))))
+        for name in ['软件工程(唐班)','ikuns2','other ikuns']:
             self.assertFalse(g.target_chat(tree(('lv_chat_his',''),('tvTitle2',name))))
 
     def test_complete_contacts_route(self):
         roots=[tree(('tabButton','消息')),tree(('tabButton','消息','true'),('tv_content','通讯录')),
                tree(('tvTitle','通讯录'),('tv_name','我加入的群聊')),
-               tree(('tvTitle','我加入的群聊(45)'),('listView',''),('tvName','软件工程（唐班）')),
-               tree(('lv_chat_his',''),('tvTitle2','软件工程（唐班）'))]
+               tree(('tvTitle','我加入的群聊(45)'),('listView',''),('tvName',g.GROUP)),
+               tree(('lv_chat_his',''),('tvTitle2',g.GROUP))]
         stop=Mock();stop.is_set.return_value=False;stop.wait.return_value=False
         with patch.object(g,'activity',side_effect=[g.MAIN,g.MAIN,g.FRAGMENT,g.FRAGMENT,g.CHAT]),patch.object(g,'snapshot',side_effect=roots),patch.object(g,'tap') as tap,patch.object(g,'write_json'):
             self.assertTrue(g.enter_group('serial',stop))
@@ -61,7 +61,7 @@ class NavigationTests(unittest.TestCase):
         self.assertEqual(g.navigation_step(root,g.MAIN)[0],'contacts')
 
     def test_duplicate_names_refuse_to_choose(self):
-        root=tree(('tvTitle','我加入的群聊(45)'),('listView',''),('tvName',g.GROUP),('tvName','软件工程（唐班）'))
+        root=tree(('tvTitle','我加入的群聊(45)'),('listView',''),('tvName',g.GROUP),('tvName','ｉｋｕｎｓ'))
         with self.assertRaises(ValueError):g.navigation_step(root,g.FRAGMENT)
 
     def test_scroll_only_joined_group_list(self):
@@ -74,7 +74,7 @@ class NavigationTests(unittest.TestCase):
         self.addCleanup(db.close)
         db.execute('CREATE TABLE group_cards(card_key TEXT,group_name TEXT,observed REAL,title TEXT,state TEXT)')
         db.execute('CREATE TABLE group_queue(card_key TEXT,posted REAL,retry_after REAL)')
-        for key,group,stamp in [('old','ikuns',time.time()-50),('new',g.GROUP,time.time())]:
+        for key,group,stamp in [('old','软件工程(唐班)',time.time()-50),('new',g.GROUP,time.time())]:
             db.execute('INSERT INTO group_cards VALUES(?,?,?,?,?)',(key,group,stamp,'test','练习待处理'))
             db.execute('INSERT INTO group_queue VALUES(?,?,0)',(key,stamp))
         self.assertEqual(queue.next_job(db)[0],'new')

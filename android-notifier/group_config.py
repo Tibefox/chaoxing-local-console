@@ -1,7 +1,7 @@
 """The single group explicitly selected for this installation."""
 import unicodedata
 
-GROUP = '软件工程(唐班)'
+GROUP = 'ikuns'
 
 def normalized_name(value):
     return unicodedata.normalize('NFKC',value or '').strip().casefold()

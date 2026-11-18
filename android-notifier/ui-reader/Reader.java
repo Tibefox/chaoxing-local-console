@@ -18,7 +18,7 @@ import org.json.JSONArray;
 
 public class Reader extends Instrumentation {
     private static final String APP = "com.chaoxing.mobile";
-    private static final String GROUP = "软件工程(唐班)";
+    private static final String GROUP = "ikuns";
     private int count;
     private String alertAction;
     private String cardRequest;
