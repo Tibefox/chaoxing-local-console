@@ -1,0 +1,179 @@
+from unittest import TestCase
+from original_images import assemble
+from question_extract import TextBlock
+
+
+class OriginalImageTests(TestCase):
+    def parse(self, owners, values):
+        boxes = [(0, y, 200, y+99) for y in range(0, 500, 100)]
+        blocks = [TextBlock(v, box, 'ocr', .99) for v, box in zip(values, boxes) if v]
+        return assemble(list(zip(owners, boxes)), blocks)
+
+    def test_one_image_per_field_uses_ui_labels(self):
+        result = self.parse(['prompt', *'ABCD'], ['[单选题] 问题', '键盘', '屏幕', '音箱', '打印机'])
+        self.assertEqual((result['status'], result['prompt'], result['options']['D']),
+                         ('recognized', '问题', '打印机'))
+
+    def test_empty_or_conflicting_images_cannot_shift_answers(self):
+        result = self.parse(['prompt', *'ABCD'], ['问题', 'B. 键盘', '', '音箱', '打印机'])
+        self.assertEqual(result['status'], 'needs_review')
+        self.assertEqual(result['options'], {'A': '', 'B': '', 'C': '音箱', 'D': '打印机'})
+
+    def test_irregular_layout_requires_printed_labels_and_review(self):
+        result = self.parse(['prompt','A','B','C','C'], ['问题','A. 键盘','B. 屏幕','D. 打印机','C. 音箱'])
+        self.assertEqual(result['options']['D'], '打印机')
+        self.assertEqual(result['status'], 'needs_review')
+        result = self.parse(['prompt','A','B','C','C'], ['问题','A. 键盘','A. 屏幕','音箱','打印机'])
+        self.assertFalse(any(result['options'].values()))
+
+    def test_thumbnail_layout_keeps_the_owner_of_each_attachment(self):
+        import xml.etree.ElementTree as ET
+        from original_images import question_parts
+        from question_capture import APP
+
+        def node(parent, kind, value='', **attributes):
+            return ET.SubElement(parent, 'node', {'class': kind, 'text': value, 'package': APP,
+                                 'bounds': '[0,0][900,1600]', **attributes})
+
+        root = ET.Element('root')
+        node(root, 'android.widget.TextView', '随堂练习',
+             **{'resource-id': APP + ':id/toolbar_tv_title'})
+        web = node(root, 'android.webkit.WebView')
+        node(web, 'android.widget.TextView', '1.[单选题]')
+        for owner, count in zip(['prompt', *'ABCD'], [1, 1, 1, 2, 0]):
+            if owner != 'prompt':
+                node(web, 'android.widget.RadioButton', owner)
+                node(web, 'android.widget.TextView', owner)
+            for _ in range(count):
+                thumb = node(web, 'android.view.View', clickable='true')
+                node(thumb, 'android.widget.TextView')
+        self.assertEqual([part.owner for part in question_parts(root, (900, 1600))],
+                         ['prompt','A','B','C','C'])
+        node(web, 'android.widget.TextView', '另有文字')
+        self.assertEqual(question_parts(root, (900, 1600))[-1].value, '另有文字')
+
+
+class MixedContentTests(TestCase):
+    def setUp(self):
+        import xml.etree.ElementTree as ET
+        from question_capture import APP
+        self.root = ET.Element('root', window='abc')
+        self.node(self.root, 'TextView', '随堂练习', **{'resource-id': APP + ':id/toolbar_tv_title'})
+        self.web = self.node(self.root, 'WebView', bounds='[0,0][480,640]')
+        self.node(self.web, 'TextView', '1.[单选题]请阅读')
+
+    def node(self, parent, kind, value='', **attrs):
+        import xml.etree.ElementTree as ET
+        from question_capture import APP
+        cls = {'View':'android.view.View', 'WebView':'android.webkit.WebView'}.get(kind,
+                                                                                 'android.widget.'+kind)
+        return ET.SubElement(parent, 'node', {'class': cls, 'package': APP, 'text': value,
+                             'bounds':'[10,100][470,200]', **attrs})
+
+    def populate(self):
+        self.node(self.web, 'Image')
+        self.node(self.web, 'TextView', '请选择')
+        self.node(self.web, 'RadioButton', 'A. 原生选项')
+        b = self.node(self.web, 'RadioButton', 'B. 开头结尾')
+        self.node(b, 'TextView', '开头')
+        self.node(b, 'ImageView')
+        self.node(b, 'TextView', '结尾')
+        self.node(self.web, 'RadioButton', 'C')
+        self.node(self.web, 'TextView', 'C')
+        self.node(self.node(self.web, 'View', clickable='true'), 'TextView')
+        self.node(self.web, 'RadioButton', 'D')
+        self.node(self.web, 'TextView', '纯文字')
+
+    def test_mixed_capture_preserves_field_and_document_order(self):
+        from original_images import question_parts, assemble
+        self.populate()
+        parts = question_parts(self.root, (480,640))
+        self.assertEqual([(p.owner,p.kind,p.value) for p in parts], [
+            ('prompt','text','请阅读'),('prompt','inline',''),('prompt','text','请选择'),
+            ('A','text','原生选项'),('B','text','开头'),('B','inline',''),('B','text','结尾'),
+            ('C','gallery',''),('D','text','纯文字')])
+        crops = [('prompt',(0,0,100,40)),('B',(0,40,100,80)),('C',(0,80,100,120))]
+        blocks = [TextBlock(v,box,'ocr',.99) for v,(_,box) in zip(['图一','图二','C. 图三'],crops)]
+        result = assemble(crops,blocks,parts)
+        self.assertEqual(result['prompt'], '请阅读\n图一\n请选择')
+        self.assertEqual(result['options'], {'A':'原生选项','B':'开头\n图二\n结尾','C':'图三','D':'纯文字'})
+        self.assertEqual(result['status'],'recognized')
+        blocks[2] = TextBlock('D. 错挂',crops[2][1],'ocr',.99)
+        result = assemble(crops,blocks[1:],parts)
+        self.assertEqual(result['status'],'needs_review')
+        self.assertEqual(result['options']['C'],'')
+        self.assertEqual(result['options']['D'],'纯文字')
+
+    def test_printed_options_before_empty_radio_list(self):
+        from original_images import question_parts
+        for k in 'ABCD':
+            self.node(self.web, 'TextView', k+'. 文字')
+            self.node(self.web, 'Image')
+        for k in 'ABCD':
+            self.node(self.web, 'RadioButton', k)
+        parts = question_parts(self.root, (480,640))
+        self.assertEqual([p.owner for p in parts if p.kind == 'inline'], list('ABCD'))
+        self.node(self.web,'Image')
+        with self.assertRaisesRegex(ValueError,'归属'):question_parts(self.root, (480,640))
+
+    def test_windows_mixed_page_through_preview_with_offscreen_attachment(self):
+        import os
+        if os.name != 'nt' or os.environ.get('CHAOXING_OCR_INTEGRATION') != '1':
+            self.skipTest('Windows OCR integration')
+        from copy import deepcopy
+        from io import BytesIO
+        from threading import Event
+        from unittest.mock import Mock, patch
+        from PIL import Image, ImageDraw, ImageFont
+        from question_capture import Capture
+        from preview_device import ReadOnlyDevice
+        from ocr_engine import recognize
+        from original_images import QUIZ, VIEWER
+
+        self.populate()
+        image = Image.new('RGB',(480,640),'white')
+        font = ImageFont.truetype(r'C:\Windows\Fonts\msyh.ttc',38)
+        draw = ImageDraw.Draw(image)
+        for kind, value, y in [('Image','输入设备',100),('ImageView','键盘',280)]:
+            node = next(n for n in self.web.iter('node') if n.get('class') == 'android.widget.'+kind)
+            node.set('bounds',f'[20,{y}][440,{y+80}]')
+            draw.text((32,y+5),value,font=font,fill='black')
+        thumb = next(n for n in self.web.iter('node') if n.get('clickable') == 'true')
+        thumb.set('bounds','[10,650][200,720]')
+        scrolled = deepcopy(self.root)
+        next(n for n in scrolled.iter('node') if n.get('clickable') == 'true').set('bounds','[10,480][200,550]')
+        enlarged = Image.new('RGB',(450,120),'white')
+        ImageDraw.Draw(enlarged).text((12,22),'C. 显示器',font=font,fill='black')
+        data = BytesIO()
+        image.save(data,format='PNG')
+        device = Mock(serial='test',adb='adb')
+        page = self.root
+        activity = QUIZ
+        device.snapshot.side_effect = lambda serial: page
+        device.capture.side_effect = lambda cancel: Capture(data.getvalue(),page,validate=lambda:None)
+        device.activity_name.side_effect = lambda: activity
+        device.focus.return_value = 'abc'
+        def scroll(*args):
+            nonlocal page
+            page = scrolled
+        def input_command(command):
+            nonlocal activity
+            if command[-3:] == ['tap','105','515']:
+                activity = VIEWER
+            elif command[-2:] == ['keyevent','4'] and activity == VIEWER:
+                activity = QUIZ
+            else:
+                self.fail(f'Unexpected input {command}')
+        device.run.side_effect = input_command
+        device.scroll_down.side_effect = scroll
+        def gallery(*args):
+            self.assertEqual(activity,VIEWER)
+            return enlarged
+        with patch('original_images.read_gallery',side_effect=gallery), patch('original_images.time.sleep'):
+            capture = ReadOnlyDevice.capture_question(device,Event())
+        result,_ = recognize(capture)
+        self.assertEqual(result['prompt'],'请阅读\n输入设备\n请选择')
+        self.assertEqual(result['options'],{'A':'原生选项','B':'开头\n键盘\n结尾','C':'显示器','D':'纯文字'})
+        self.assertEqual(result['status'],'recognized')
+        device.scroll_down.assert_called_once()
+        self.assertEqual(activity,QUIZ)

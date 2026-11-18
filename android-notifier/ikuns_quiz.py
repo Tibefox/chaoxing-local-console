@@ -112,13 +112,13 @@ class Question:
         return hashlib.sha256(json.dumps(content, ensure_ascii=False).encode()).hexdigest()
 
 
-def read_question(root):
+def read_question(root, recognized=None):
     items = texts(root)
     marker = re.compile(r"[\[【（(]\s*(?:单选题|判断题)\s*[\]】）)]|^(?:单选题|判断题)$")
     found = [(i, match) for i,(t,_) in enumerate(items) for match in marker.finditer(t)]
     if not is_quiz(root) or len(found) != 1:
         raise ValueError("题型或题数待核对")
-    if any(n.get('package')==APP and n.get('class')=='android.widget.Image' for n in root.iter('node')):
+    if recognized is None and any(n.get('package')==APP and n.get('class')=='android.widget.Image' for n in root.iter('node')):
         raise ValueError('题目含图片，需要图像识别后处理')
     index, match = found[0]
     before = items[:index]
@@ -166,7 +166,9 @@ def read_question(root):
     def clean(value):
         joined = " ".join(value.split())
         return re.sub(r"(?<=[\u3400-\u9fff，。？！；：、]) (?=[\u3400-\u9fff])", "", joined)
-    if not starts and len(controls)>=2 and list(controls)==list(OPTION_KEYS[:len(controls)]):
+    if recognized is not None and controls:
+        prompt, options = recognized['prompt'], recognized['options']
+    elif not starts and len(controls)>=2 and list(controls)==list(OPTION_KEYS[:len(controls)]):
         # Native option-only exercises can consist solely of the A..F radios,
         # with no separate "A. text" block. Read their actual accessible labels.
         prompt=clean(material)
@@ -199,6 +201,8 @@ def read_question(root):
                     node.get("clickable") == "true" or node.get("checkable") == "true"):
                 controls[key] = node
 
+    if recognized is not None:
+        prompt, options = recognized['prompt'], recognized['options']
     if not stamp and any(t.startswith("剩余") for t,_ in before):
         countdown = next(i for i,(t,_) in enumerate(before) if t.startswith("剩余"))
         title = next((t for t,_ in before[countdown+1:] if not re.fullmatch(r"\d+[.．、]?",t)), "")
@@ -290,14 +294,17 @@ def select_choice(serial,root,question,key):
     if len(toolbar)!=1:
         return False
     n=question.controls[key]
-    return snapshot(serial,choice=[text(toolbar[0]),question.title,text(n),n.get('class'),n.get('bounds')]).get('choiceAction')=='clicked'
+    anchor = getattr(question, 'native_title', None)
+    if anchor == '':
+        raise ValueError('投票标题仅含图片，无法用原生页面标题核验点选')
+    return snapshot(serial,choice=[text(toolbar[0]),anchor or question.title,text(n),n.get('class'),n.get('bounds')]).get('choiceAction')=='clicked'
 
 
-def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
+def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None, image_deadline=None):
     # Share the verified selection/submit lifecycle; each activity owns its parser and receipt.
     import sys
     handler = adapter or sys.modules[__name__]
-    read_question = handler.read_question
+    from activity_reader import ActivityDevice, ActivityReader, has_images
     is_quiz = handler.is_quiz
     outcome = handler.outcome
     save_platform_receipt = handler.save_platform_receipt
@@ -309,6 +316,7 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
         from group_watch import quiz_enabled, vote_enabled
         if not (vote_enabled() if adapter is not None else quiz_enabled()):
             raise InterruptedError('投票自动提交已关闭' if adapter is not None else '练习自动提交已关闭')
+    reader = ActivityReader(handler.read_question, ActivityDevice(serial, guard, stop), stop)
     def view(opening=False):
         until = min(deadline,time.time()+3)
         while True:
@@ -336,7 +344,7 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
         until=min(deadline,time.time()+6)
         while True:
             try:
-                return root,read_question(root)
+                return reader.read(root)
             except ValueError:
                 if outcome(root) or time.time()>=until:
                     raise
@@ -350,14 +358,20 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
             screen=activity(serial)
             if screen == VIEWER:
                 root = view(opening=True)
+                parsed = None
                 if root is not None and is_quiz(root) and not outcome(root):
                     try:
-                        parsed=read_question(root)
+                        if has_images(root):
+                            if image_deadline is not None:
+                                deadline = max(deadline, image_deadline)
+                            root, parsed = reader.read(root)
+                        else:
+                            parsed = handler.read_question(root)
                         record(db,receipt,'page_parsed',options=len(parsed.options))
                     except ValueError as exc:
                         record(db,receipt,'page_parse_wait',reason=str(exc)[:200])
                 if root is not None and is_quiz(root) and (outcome(root) or
-                        (adapter is not None and adapter.ready(root)) or
+                        (adapter is not None and parsed is not None) or
                         (adapter is None and any("单选题" in t or "判断题" in t for t,_ in texts(root)))):
                     break
             elif screen in {APP+".main.ui.MainTabActivity",APP+".chat.ui.CourseChatActivity"}:
@@ -462,7 +476,7 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
                 pixels=selector_pixels(serial,controls)
                 fresh=snapshot(serial)
                 if alert(fresh) is None and fresh.get('window') and fresh.get('window')==root.get('window') and is_quiz(fresh):
-                    refreshed=read_question(fresh)
+                    fresh,refreshed=reader.read(fresh)
                     if refreshed.identity()==fingerprint and geometry=={
                             k:bounds(n) for k,n in selection_controls(fresh,refreshed).items()}:
                         return fresh,refreshed,controls,geometry,pixels
@@ -553,6 +567,10 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None):
         if len(submits)!=1 or not fully_visible(root,submits[0]):
             raise ValueError("没有唯一可用的提交按钮")
         bounds(submits[0])
+        if reader.result is not None:
+            root,current = reader.read(root)
+            if current.identity() != fingerprint:
+                raise ValueError('提交前图片题已变化')
         guard()
         with db:
             db.execute("INSERT INTO group_attempts VALUES(?,?,?,?)",

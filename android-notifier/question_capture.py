@@ -31,6 +31,8 @@ class Capture:
     tree: object = None
     validate: object = None
     scan: object = None
+    originals: object = None
+    parts: object = None
 
 
 def capture_current(serial, snapshot=None, shell=None, guard=lambda: None):
@@ -40,8 +42,8 @@ def capture_current(serial, snapshot=None, shell=None, guard=lambda: None):
     before = snapshot(serial)
     titles = [text(n) for n in before.iter('node')
               if n.get('resource-id') == APP + ':id/toolbar_tv_title']
-    if titles != ['随堂练习'] or not before.get('window'):
-        raise ValueError('请本人先打开随堂练习题目页面，再识别当前题目')
+    if titles not in (['随堂练习'], ['投票'], ['投票详情']) or not before.get('window'):
+        raise ValueError('请本人先打开随堂练习或投票题目页面，再识别当前题目')
     if any(n.get('resource-id') == APP + ':id/btnCancel' for n in before.iter('node')):
         raise ValueError('页面被提醒遮挡，请本人关闭提醒后重试')
     guard()

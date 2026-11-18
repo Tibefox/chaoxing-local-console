@@ -50,14 +50,14 @@ def offset(previous, current):
     return shift
 
 
-def capture_long(capture, scroll, cancel, progress=lambda message: None):
+def capture_long(capture, scroll, cancel, progress=lambda message: None, first=None):
     """Callbacks own device guards; this layer only assembles matching pixels."""
     from ocr_engine import image_from_bytes, load_dependencies, MAX_PIXELS
     if cancel.is_set():
         raise InterruptedError('已取消滚动识别')
     Image = load_dependencies()
     started = time.monotonic()
-    first = last = capture(cancel)
+    first = last = first or capture(cancel)
     identity = question_titles(first.tree)
     if len(identity) > 1:
         raise ValueError('当前屏幕包含多道题，请先打开单道题再滚动识别')

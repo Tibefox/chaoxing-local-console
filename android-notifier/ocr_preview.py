@@ -121,7 +121,7 @@ class Preview:
         if self.current_long:
             def produce():
                 capture = self.current_long(self.cancel, lambda message: self.events.put(('progress', message)))
-                self.events.put(('progress', '正在识别拼接长图，可随时取消…'))
+                self.events.put(('progress', '正在识别题目图片，可随时取消…'))
                 return capture
             self.start(produce)
 
@@ -155,7 +155,7 @@ class Preview:
         load_dependencies()
         from PIL import ImageTk
         image = self.image.copy()
-        height = self.image.height if self.capture and self.capture.scan else max(1, self.canvas.winfo_height())
+        height = self.image.height if self.capture and (self.capture.scan or self.capture.originals) else max(1, self.canvas.winfo_height())
         image.thumbnail((max(1, self.canvas.winfo_width()), height))
         self.photo = ImageTk.PhotoImage(image, master=self.window)
         self.canvas.delete('all'); self.canvas.create_image(0, 0, anchor='nw', image=self.photo)
@@ -208,10 +208,10 @@ if __name__ == '__main__':
         if args.installation:
             from preview_device import ReadOnlyDevice
             device = ReadOnlyDevice(args.installation)
-            current, current_long = device.capture, device.capture_long
+            current, current_long = device.capture_question, device.capture_long
         preview = Preview(current=current, current_long=current_long)
         if current:
-            preview.status.set('请本人打开题目；长题先停在题干开头，再点“滚动识别长题”（最多8屏，结束后停留末屏）。')
+            preview.status.set('请从题干开头识别。图文混排单选题会按栏位读取文字和图片，附件会逐张打开原图。')
         if args.image:
             preview.start(lambda: file_capture(args.image))
         preview.window.mainloop()

@@ -48,7 +48,7 @@ def build(output, archive=True):
         copy(ROOT/name,app/name)
     for name in ('desktop_control.py','weekly_control.py','register_weekly.ps1','course_session.py','group_watch.py',
                  'burst_queue.py','ikuns_quiz.py','ikuns_vote.py','activity_trace.py','process_lifecycle.py','process_catalog.ps1','login_control.py','group_config.py',
-                 'question_capture.py','question_extract.py','ocr_engine.py','ocr_preview.py','preview_device.py','scroll_capture.py'):
+                 'question_capture.py','question_extract.py','ocr_engine.py','ocr_preview.py','preview_device.py','scroll_capture.py','original_images.py','activity_reader.py','vote_form.py'):
         copy(ROOT/'android-notifier'/name,app/'android-notifier'/name)
     for name in ('launcher.py','first_run.py','package_check.py'):
         copy(HERE/name,app/'android-notifier'/name)

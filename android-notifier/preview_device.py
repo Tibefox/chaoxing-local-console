@@ -1,4 +1,4 @@
-"""Preview an existing paired installation; only long preview may drag downward."""
+"""Preview an existing paired installation; with scoped original-image viewing and downward scrolling."""
 import base64
 import json
 from pathlib import Path
@@ -14,6 +14,7 @@ from question_capture import APP, bounds, capture_current, fingerprint, regions,
 READER = 'local.chaoxing.uiread'
 READ_COMMANDS = {
     ('get-state',),
+    ('exec-out', 'uiautomator', 'dump', '/dev/tty'),
     ('shell', 'dumpsys', 'window'),
     ('shell', 'dumpsys', 'package', READER),
     ('exec-out', 'am', 'instrument', '-w', READER + '/.Reader'),
@@ -203,6 +204,22 @@ Select-Object Name,CommandLine) | ConvertTo-Json -Compress
         if self.cancel.wait(.7):
             raise InterruptedError('已取消滚动识别，页面停留在当前位置')
 
+    def activity_name(self):
+        data = self.read(self.serial, 'shell', 'dumpsys', 'window').decode('utf-8', 'replace')
+        match = re.search(r'mCurrentFocus=Window\{[0-9a-fA-F]+ u\d+ ' + re.escape(APP) + r'/([.\w$]+)\}', data)
+        if not match:
+            return ''
+        name = match[1]
+        return APP + name if name.startswith('.') else name
+
+    def capture_question(self, cancel):
+        from original_images import collect
+        first = self.capture(cancel)
+        return collect(self, first, cancel)
+
     def capture_long(self, cancel, progress=lambda message: None):
         from scroll_capture import capture_long
-        return capture_long(self.capture, self.scroll_down, cancel, progress)
+        first = self.capture_question(cancel)
+        if first.originals:
+            return first
+        return capture_long(self.capture, self.scroll_down, cancel, progress, first=first)

@@ -407,7 +407,7 @@ def main():
         from ocr_preview import dialog as ocr_dialog
         from preview_device import ReadOnlyDevice
         device = ReadOnlyDevice(ROOT.parent)
-        ocr_window = ocr_dialog(win, device.capture, device.capture_long)
+        ocr_window = ocr_dialog(win, device.capture_question, device.capture_long)
     from weekly_control import dialog, rules, DAYS
     add("每周时段", lambda: dialog(win))
     account_bar = ttk.Frame(frame)

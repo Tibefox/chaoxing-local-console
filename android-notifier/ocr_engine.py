@@ -118,6 +118,8 @@ def recognize(capture, cancel=None, timeout=45):
     if capture.tree is not None:
         native, crops, warnings = regions(capture.tree, image.size)
         warnings.append('仅识别当前屏幕，尚未核对屏幕外是否有题目内容')
+    if capture.originals:
+        crops = [box for _, box in capture.originals]
     if capture.scan:
         from scroll_capture import tiles
         crops = tiles(image.size)
@@ -133,7 +135,11 @@ def recognize(capture, cancel=None, timeout=45):
         capture.validate()
     if not blocks:
         warnings.append('未识别到文字；图形、公式和手写题暂不支持')
-    result = extract(blocks, warnings)
+    if capture.originals:
+        from original_images import assemble
+        result = assemble(capture.originals, blocks, capture.parts)
+    else:
+        result = extract(blocks, warnings)
     result['seconds'] = round(time.monotonic() - begin, 3)
     result['size'] = image.size
     if capture.scan:
