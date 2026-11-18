@@ -152,7 +152,8 @@ class MixedContentTests(TestCase):
         device.snapshot.side_effect = lambda serial: page
         device.capture.side_effect = lambda cancel: Capture(data.getvalue(),page,validate=lambda:None)
         device.activity_name.side_effect = lambda: activity
-        device.focus.return_value = 'abc'
+        for tree in (page, scrolled):
+            tree.set('activity', QUIZ)
         def scroll(*args):
             nonlocal page
             page = scrolled
@@ -169,7 +170,7 @@ class MixedContentTests(TestCase):
         def gallery(*args):
             self.assertEqual(activity,VIEWER)
             return enlarged
-        with patch('original_images.read_gallery',side_effect=gallery), patch('original_images.time.sleep'):
+        with patch('original_images.read_gallery',side_effect=gallery):
             capture = ReadOnlyDevice.capture_question(device,Event())
         result,_ = recognize(capture)
         self.assertEqual(result['prompt'],'请阅读\n输入设备\n请选择')
@@ -177,3 +178,46 @@ class MixedContentTests(TestCase):
         self.assertEqual(result['status'],'recognized')
         device.scroll_down.assert_called_once()
         self.assertEqual(activity,QUIZ)
+
+    def test_reused_tree_cannot_authorize_tap_or_accept_stale_return(self):
+        from copy import deepcopy
+        from threading import Event
+        from unittest.mock import Mock, patch
+        from original_images import collect, QUIZ, VIEWER
+        from question_capture import Capture
+
+        self.root.set('activity', QUIZ)
+        self.node(self.node(self.web,'View',clickable='true'),'TextView')
+        for key in 'ABCD':
+            self.node(self.web,'RadioButton',key,bounds='[0,300][480,330]')
+        changed = deepcopy(self.root)
+        changed.set('window','different')
+        first = Capture(b'frame',self.root)
+        for before,after,reason,count in [(changed,self.root,'打开原图前',0),
+                                           (self.root,changed,'从原图返回后',2)]:
+            with self.subTest(reason=reason):
+                device = Mock(serial='s',adb='adb')
+                device.snapshot.side_effect = [before,after]
+                device.activity_name.side_effect = [VIEWER,VIEWER,QUIZ]
+                with (patch('ocr_engine.image_from_bytes',return_value=Mock(size=(480,640))),
+                      patch('original_images.read_gallery',return_value=Mock(width=300,height=400)),
+                      self.assertRaisesRegex(ValueError,reason)):
+                    collect(device,first,Event())
+                self.assertEqual(device.run.call_count,count)
+
+    def test_window_wait_polls_until_target_and_aborts_on_timeout_or_cancel(self):
+        from threading import Event
+        from unittest.mock import Mock, patch
+        from original_images import wait_for_activity, VIEWER, QUIZ
+        device, cancel = Mock(), Mock()
+        cancel.is_set.return_value = False
+        device.activity_name.side_effect = [QUIZ, VIEWER]
+        wait_for_activity(device, VIEWER, cancel)
+        cancel.wait.assert_called_once()
+        device.activity_name.side_effect = None
+        device.activity_name.return_value = QUIZ
+        with patch('original_images.time.monotonic',side_effect=[0,2]), self.assertRaisesRegex(ValueError,'超时'):
+            wait_for_activity(device, VIEWER, Event())
+        cancel.is_set.return_value = True
+        with self.assertRaises(InterruptedError):
+            wait_for_activity(device, VIEWER, cancel)

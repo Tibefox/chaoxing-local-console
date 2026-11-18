@@ -149,6 +149,7 @@ class ReaderTests(unittest.TestCase):
                                                      'bounds':'[24,150][240,250]'}))
                 for n in web.iter('node'):
                     if n.get('class')=='android.widget.Image':n.set('bounds','[24,150][240,250]')
+                root.set('activity',quiz.VIEWER)
                 device=Mock(serial='dev')
                 device.snapshot.return_value=root
                 device.capture.return_value=Capture(data.getvalue(),root,validate=lambda:None)

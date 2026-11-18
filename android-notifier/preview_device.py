@@ -132,15 +132,18 @@ Select-Object Name,CommandLine) | ConvertTo-Json -Compress
             raise ValueError('已配对设备缺少新版页面读取器；本窗口不会自动安装或更新')
         return serial
 
-    def focus(self):
+    def focused_window(self):
         output = self.read(self.serial, 'shell', 'dumpsys', 'window').decode('utf-8', 'replace')
-        found = re.findall(r'mCurrentFocus=Window\{([0-9a-fA-F]+) u\d+ ' + re.escape(APP) + r'/[^\s}]+\}', output)
+        found = re.findall(r'mCurrentFocus=Window\{([0-9a-fA-F]+) u\d+ ' + re.escape(APP) + r'/([.\w$]+)\}', output)
         if len(found) != 1:
-            raise ValueError('学习通未在前台，请本人手动打开随堂练习')
-        return found[0]
+            return '', ''
+        token, name = found[0]
+        return token, APP + name if name.startswith('.') else name
 
     def snapshot(self, serial):
-        before = self.focus()
+        before = self.focused_window()
+        if not before[0]:
+            raise ValueError('学习通未在前台，请本人手动打开随堂练习')
         data = self.read(serial, 'exec-out', 'am', 'instrument', '-w', READER + '/.Reader')
         match = re.search(rb'INSTRUMENTATION_RESULT: tree=([A-Za-z0-9+/=]+)', data)
         if not match:
@@ -148,9 +151,10 @@ Select-Object Name,CommandLine) | ConvertTo-Json -Compress
         root = ET.fromstring(base64.b64decode(match[1], validate=True))
         if root.get('readerVersion') != '3':
             raise ValueError('页面读取器协议版本尚未核验')
-        if self.focus() != before:
+        if self.focused_window() != before:
             raise ValueError('读取期间前台窗口变化，请重试')
-        root.set('window', before)
+        root.set('window', before[0])
+        root.set('activity', before[1])
         return root
 
     def capture(self, cancel):
@@ -205,12 +209,7 @@ Select-Object Name,CommandLine) | ConvertTo-Json -Compress
             raise InterruptedError('已取消滚动识别，页面停留在当前位置')
 
     def activity_name(self):
-        data = self.read(self.serial, 'shell', 'dumpsys', 'window').decode('utf-8', 'replace')
-        match = re.search(r'mCurrentFocus=Window\{[0-9a-fA-F]+ u\d+ ' + re.escape(APP) + r'/([.\w$]+)\}', data)
-        if not match:
-            return ''
-        name = match[1]
-        return APP + name if name.startswith('.') else name
+        return self.focused_window()[1]
 
     def capture_question(self, cancel):
         from original_images import collect
