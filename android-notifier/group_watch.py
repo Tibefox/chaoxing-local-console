@@ -473,8 +473,9 @@ def watch(serial, stop, knowledge):
                                     continue
                                 from activity_trace import record as trace_activity
                                 trace_activity(db,source,'card_clicked',kind='vote' if is_vote else 'quiz')
-                                image_deadline = min(time.time()+120, lease['end'] if lease.get('receiver')==os.getpid() else float('inf'))
-                                done=handler.run(serial,db,source,knowledge,stop,deadline,report,image_deadline=image_deadline)
+                                session_end = lease['end'] if lease.get('receiver')==os.getpid() else float('inf')
+                                image_deadline = min(time.time()+120, session_end)
+                                done=handler.run(serial,db,source,knowledge,stop,deadline,report,image_deadline=image_deadline,session_end=session_end)
                                 if not done and not stop.is_set():
                                     check_submission(serial,db,source,stop)
                             finally:

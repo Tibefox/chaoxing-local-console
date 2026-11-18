@@ -96,6 +96,6 @@ def save_platform_receipt(db, source, root, expected):
     return True
 
 
-def run(serial, db, receipt, knowledge, stop, deadline, report, image_deadline=None):
+def run(serial, db, receipt, knowledge, stop, deadline, report, image_deadline=None, session_end=None):
     return quiz.run(serial, db, receipt, knowledge, stop, deadline, report,
-                    adapter=sys.modules[__name__], image_deadline=image_deadline)
+                    adapter=sys.modules[__name__], image_deadline=image_deadline, session_end=session_end)

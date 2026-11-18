@@ -267,6 +267,9 @@ class GroupQuizTests(unittest.TestCase):
         db.execute("CREATE TABLE group_submission_sources(receipt PRIMARY KEY,identity)")
         db.execute("CREATE TABLE group_attempts(identity PRIMARY KEY, phase, answer, sources)")
         stage="question"
+        pending_reads = 0
+        stop = Event()
+        stop.wait = lambda delay: False
         calls=[]
         def tap(serial,node):
             nonlocal stage
@@ -277,6 +280,11 @@ class GroupQuizTests(unittest.TestCase):
             nonlocal stage
             stage="scroll"
         def snap(serial):
+            nonlocal pending_reads
+            if stage == 'receipt' and pending_reads < 8:
+                pending_reads += 1
+                # A dismissed dialog can remain in the accessible tree for several samples.
+                return page('confirm')
             root=page(stage)
             ET.SubElement(root,"node",{"class":"android.webkit.WebView","bounds":"[0,80][900,1600]"})
             # The real seven-option page exposes a one-pixel submit button as
@@ -290,9 +298,39 @@ class GroupQuizTests(unittest.TestCase):
              patch.object(quiz,"tap",tap), patch.object(quiz,'select_choice',side_effect=lambda s,r,q,k: (tap(s,q.controls[k]) or True)), patch.object(quiz,"shell",swipe), \
              patch.object(quiz,"selector_pixels",return_value={}), \
              patch.object(quiz,"solve",return_value={"answers":{"q1":["B"]},"sources":["fixture"]}):
-            self.assertTrue(quiz.run("device",db,"sample",None,Event(),time.time()+30,lambda msg:None))
+            self.assertTrue(quiz.run("device",db,"sample",None,stop,time.time()+30,lambda msg:None))
         self.assertEqual(calls,["B","提交","确定"])
         self.assertEqual(db.execute("select phase,answer from group_attempts").fetchone(),("已提交","B"))
+
+    def test_pending_attempt_only_reads_matching_receipt_and_never_submits_again(self):
+        from unittest.mock import Mock
+        with sqlite3.connect(':memory:') as db, TemporaryDirectory() as tmp:
+            db.executescript("""
+                CREATE TABLE group_cards(card_key PRIMARY KEY,title,state,observed);
+                INSERT INTO group_cards VALUES('sample','测试活动','提交待核对',0);
+                CREATE TABLE group_attempts(identity PRIMARY KEY,phase,answer,sources);
+                INSERT INTO group_attempts VALUES('card:sample','提交待核对','C','[]');
+                CREATE TABLE group_submission_sources(receipt PRIMARY KEY,identity);
+                INSERT INTO group_submission_sources VALUES('sample','card:sample');
+            """)
+            def receipt(title, answer):
+                r = page('receipt')
+                for value in [title,'我的答案：'+answer]:
+                    ET.SubElement(r,'node',{'package':quiz.APP,'text':value})
+                return r
+            stop = Event()
+            stop.wait = lambda delay: False
+            snapshots = [page('confirm'),page('dialog'),receipt('其他活动','C'),receipt('测试活动','B'),
+                         receipt('测试活动','C')]
+            forbidden = Mock(side_effect=AssertionError('pending verification must be read-only'))
+            with (patch.object(quiz,'DATA',Path(tmp)), patch.object(quiz,'activity',return_value=quiz.VIEWER),
+                  patch.object(quiz,'snapshot',side_effect=snapshots) as observed,
+                  patch.object(quiz,'tap',forbidden), patch.object(quiz,'solve',forbidden),
+                  patch.object(quiz,'clear_overlay',forbidden), patch.object(quiz,'select_choice',forbidden)):
+                self.assertTrue(quiz.run('device',db,'sample',None,stop,time.time()+20,lambda msg:None))
+                self.assertEqual(observed.call_count,len(snapshots))
+            forbidden.assert_not_called()
+            self.assertEqual(db.execute('SELECT phase,answer FROM group_attempts').fetchone(), ('已提交','C'))
 
     def test_last_scroll_reveals_m_and_submits_once(self):
         db=sqlite3.connect(':memory:')

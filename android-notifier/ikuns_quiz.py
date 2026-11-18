@@ -306,14 +306,48 @@ def select_choice(serial,root,question,key):
     return snapshot(serial,choice=[text(toolbar[0]),anchor or question.title,text(n),n.get('class'),n.get('bounds')]).get('choiceAction')=='clicked'
 
 
-def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None, image_deadline=None):
+def wait_for_receipt(serial, db, receipt, chosen, handler, stop, deadline, window, title, confirm_once=None):
+    """Observe the submitted card. Only its initial, explicit confirmation dialog can accept input."""
+    until = time.monotonic() + min(30, max(0, deadline - time.time()))
+    polls = 0
+    while time.monotonic() < until and not stop.is_set() and not (DATA/'stop').exists():
+        polls += 1
+        if activity(serial) == VIEWER:
+            try:
+                root = snapshot(serial)
+            except ValueError:  # A transitioning WebView can temporarily have no readable tree.
+                root = None
+            if root is not None and alert(root) is None and root.get('window'):
+                words = texts(root)
+                same_window = window and window == root.get('window')
+                # A resumed pending attempt has no trusted window token yet.
+                resumed_card = window is None and title and any(t == title for t, _ in words)
+                if (same_window or resumed_card) and handler.is_quiz(root):
+                    final = handler.outcome(root)
+                    if final == '已提交':
+                        if handler.save_platform_receipt(db, receipt, root, chosen):
+                            return final
+                    elif final:
+                        return final
+                    elif confirm_once and polls <= 4 and same_window:
+                        buttons = [n for t,n in words if t in {'确定','确认','确认提交'}]
+                        if len(buttons) == 1 and any(re.search(r'(是否|确定|确认).{0,8}提交',t)
+                                                     for t,_ in words if t != '确认提交'):
+                            confirm_once(buttons[0])
+                            confirm_once = None
+        remaining = until - time.monotonic()
+        if remaining > 0:
+            stop.wait(min(.25 if polls < 4 else 1, remaining))
+    return None
+
+
+def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None, image_deadline=None, session_end=None):
     # Share the verified selection/submit lifecycle; each activity owns its parser and receipt.
     import sys
     handler = adapter or sys.modules[__name__]
     from activity_reader import ActivityDevice, ActivityReader, has_images
     is_quiz = handler.is_quiz
     outcome = handler.outcome
-    save_platform_receipt = handler.save_platform_receipt
     from activity_trace import record
     record(db,receipt,'handler_started',kind='vote' if adapter else 'quiz')
     def guard():
@@ -355,8 +389,30 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None, im
                 if outcome(root) or time.time()>=until:
                     raise
                 root=view()
+    def verify_receipt(chosen, window, title, confirm_once=None):
+        final = wait_for_receipt(serial, db, receipt, chosen, handler, stop,
+                                 deadline if session_end is None else session_end, window, title, confirm_once)
+        if not final:
+            raise ValueError('尚未核对到平台回执')
+        if final == '已提交':
+            report('已核对平台提交回执')
+        else:
+            with db:
+                db.execute('UPDATE group_attempts SET phase=? WHERE identity IN '
+                           '(SELECT identity FROM group_submission_sources WHERE receipt=?)', (final,receipt))
+            update(final)
+        return True
+
     attempted = False
     try:
+        pending = db.execute("SELECT a.answer,c.title FROM group_submission_sources s "
+                             "JOIN group_attempts a ON a.identity=s.identity "
+                             "JOIN group_cards c ON c.card_key=s.receipt "
+                             "WHERE s.receipt=? AND a.phase='提交待核对'", (receipt,)).fetchone()
+        if pending:
+            attempted = True
+            return verify_receipt(pending[0], None, pending[1])
+
         load_until=min(deadline,time.time()+20)
         card_retry = None
         while time.time()<load_until:
@@ -587,28 +643,10 @@ def run(serial, db, receipt, knowledge, stop, deadline, report, adapter=None, im
         guard()  # Re-read switches after persisting the uncertain-attempt guard.
         tap(serial,submits[0])
         update("已点提交 · 等待回执")
-        confirmed=False
-        for _ in range(4):
-            root=view()
-            final=outcome(root) if is_quiz(root) else None
-            if final:
-                if final=="已提交" and save_platform_receipt(db,receipt,root,chosen):
-                    report("已核对平台提交回执")
-                    return True
-                if final=="已提交":
-                    raise ValueError("平台答案尚未核对")
-                with db:
-                    db.execute("UPDATE group_attempts SET phase=? WHERE identity=?",(final,identity))
-                update(final)
-                return True
-            words=texts(root)
-            confirms=[n for t,n in words if t in {"确定","确认","确认提交"}]
-            if not confirmed and len(confirms)==1 and any(re.search(r"(是否|确定|确认).{0,8}提交",t) for t,_ in words if t!="确认提交"):
-                guard()
-                tap(serial,confirms[0])
-                confirmed=True
-            stop.wait(.25)
-        raise ValueError("未发现平台回执")
+        def confirm_once(node):
+            guard()
+            tap(serial, node)
+        return verify_receipt(chosen, root.get('window'), question.title, confirm_once)
     except Exception as exc:
         update(("提交待核对" if attempted else "需人工处理") + "·" + str(exc)[:50])
         return False
