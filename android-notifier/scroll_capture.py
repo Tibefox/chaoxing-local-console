@@ -108,7 +108,7 @@ def capture_long(capture, scroll, cancel, progress=lambda message: None, first=N
     if last.validate:
         last.validate()
     output = BytesIO(); merged.save(output, format='PNG')
-    return Capture(output.getvalue(), validate=last.validate, scan={
+    return Capture(output.getvalue(), validate=last.validate, receipt=last.receipt, scan={
         'screens': screens, 'reason': reason,
         'warnings': ['从当前屏幕开始向下采集，请核对起点包含题干开头', reason,
                      '滚动预览使用拼接图 OCR，请核对文字、选项及跨屏接缝；页面停留在最后读取位置']})

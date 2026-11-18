@@ -18,6 +18,35 @@ def text(node):
     return (node.get('text') or node.get('content-desc') or '').strip()
 
 
+SUBMITTED = {'已提交', '提交成功', '已作答', '已参与', '已提交，待教师公布正确答案'}
+OWN_ANSWER = re.compile(r'(?:我的答案|你的答案)\s*[:：]\s*(?:\d+(?:\.\d+)?\s*积分\s*)?([A-M])')
+
+
+def quiz_result_footer(root):
+    """Return result metadata separately from the question's accessible text."""
+    title = [text(n) for n in root.iter('node') if n.get('resource-id') == APP + ':id/toolbar_tv_title']
+    if title != ['随堂练习']:
+        return set(), None
+    rows = [(text(n), n) for n in root.iter('node') if n.get('package') == APP and text(n)]
+    marker = next((i for i, (value, _) in enumerate(rows)
+                   if re.match(r'^(?:\d+[.．、]\s*)?[\[【（(]?\s*(?:单选题|判断题)', value)), None)
+    if marker is None:
+        return set(), None
+    footer = []
+    for value, node in reversed(rows[marker+1:]):
+        if value in {'返回', '修改', '确定'}:
+            continue
+        if not (OWN_ANSWER.fullmatch(value) or re.fullmatch(r'正确答案\s*[:：]?\s*[A-M]', value)
+                or re.fullmatch(r'提交时间\s*[:：].+', value)):
+            break
+        footer.append((value, node))
+    answers = [m[1] for value, _ in reversed(footer) if (m := OWN_ANSWER.fullmatch(value))]
+    has_banner = any(value in SUBMITTED for value, _ in rows[:marker])
+    if not has_banner and (not answers or any(value == '提交' for value, _ in rows)):
+        return set(), None
+    return {node for _, node in footer}, {'status': '已提交', 'answers': answers}
+
+
 def fingerprint(root):
     # Countdown changes are expected; geometry, content and window changes are not.
     values = [(n.get('class'), n.get('bounds'), n.get('visible'),
@@ -33,6 +62,7 @@ class Capture:
     scan: object = None
     originals: object = None
     parts: object = None
+    receipt: dict | None = None
 
 
 def capture_current(serial, snapshot=None, shell=None, guard=lambda: None):
@@ -54,7 +84,7 @@ def capture_current(serial, snapshot=None, shell=None, guard=lambda: None):
         raise ValueError('截图期间页面变化，请等页面稳定后重新识别')
     if not png.startswith(b'\x89PNG\r\n\x1a\n'):
         raise ValueError('未取得有效截图')
-    return Capture(png, before)
+    return Capture(png, before, receipt=quiz_result_footer(before)[1])
 
 
 def document(root, size):
@@ -82,8 +112,9 @@ def regions(root, size):
     """Return native text plus fully visible image crops, conservatively."""
     web, viewport = document(root, size)
     images, native, warnings = [], [], []
+    footer, _ = quiz_result_footer(root)
     for n in web.iter('node'):
-        if n.get('package') != APP or n.get('visible') == 'false' or n is web:
+        if n.get('package') != APP or n.get('visible') == 'false' or n is web or n in footer:
             continue
         box = bounds(n)
         if not box or box[2] <= box[0] or box[3] <= box[1]:

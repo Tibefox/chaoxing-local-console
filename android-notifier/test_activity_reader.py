@@ -59,6 +59,40 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(self.resolve(quiz,root,['判断内容','正确','错误']).options,{'A':'正确','B':'错误'})
         with self.assertRaisesRegex(ValueError,'判断'):self.resolve(quiz,root,['判断内容','正确','正确'])
 
+    def test_submitted_mixed_result_separates_native_footer_from_ocr(self):
+        root = quiz_page('AB', '单选题')
+        web = next(n for n in root.iter('node') if n.get('class') == 'android.webkit.WebView')
+        marker = next(n for n in web if '单选题' in quiz.text(n))
+        def label(value):
+            return ET.Element('node', {'package': APP, 'class':'android.widget.TextView', 'text':value})
+        web.insert(list(web).index(marker), label('已提交，待教师公布正确答案'))
+        for n in web:
+            if n.get('class') == 'android.widget.RadioButton':
+                n.set('class','android.widget.TextView')
+                n.set('text',quiz.text(n)+'.')
+        web.extend([label('你的答案：2积分B'), label('正确答案：A')])
+        parsed = self.resolve(quiz, root, ['题图','甲','乙'])
+        self.assertEqual((parsed.prompt, parsed.options), ('题图', {'A':'甲','B':'乙'}))
+        self.assertEqual(parsed.receipt, {'status':'已提交','answers':['B']})
+        self.assertEqual(parsed.controls, {})
+        self.assertEqual(quiz.platform_answers(root), ['B'])
+        with self.assertRaisesRegex(ValueError,'标识'):
+            quiz.read_question(root, {'prompt':'题图','options':{'A':'甲','C':'乙'}})
+
+    def test_submitted_text_result_keeps_answer_like_question_words(self):
+        root = quiz_page('AB','单选题')
+        web = next(n for n in root.iter('node') if n.get('class') == 'android.webkit.WebView')
+        for n in list(web)[3:]:
+            web.remove(n)
+        def line(value):
+            return ET.Element('node', {'package':APP, 'class':'android.widget.TextView','text':value})
+        web.insert(2,line('已提交'))
+        web.extend(line(value) for value in ['我的答案应该写在哪里？','A. 第一项','B. 第二项','我的答案：A'])
+        parsed = quiz.read_question(root)
+        self.assertEqual((parsed.prompt, parsed.options, parsed.controls),
+                         ('我的答案应该写在哪里？', {'A':'第一项','B':'第二项'}, {}))
+        self.assertEqual(parsed.receipt['answers'], ['A'])
+
     def test_votes_preserve_limits_and_native_controls(self):
         for mode in ('single','multiple'):
             root=vote_page(mode)

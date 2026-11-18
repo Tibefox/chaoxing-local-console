@@ -14,8 +14,13 @@ def format_result(result):
     options = '\n\n'.join(f'{k}. {v}' for k, v in result['options'].items())
     warnings = '\n'.join('• ' + w for w in result['warnings']) or '文字结构已识别，请对照原图核对。'
     scan = f"\n向下采集 {result['scan']['screens']} 屏；请核对长图接缝。" if result.get('scan') else ''
+    receipt = result.get('receipt')
+    receipt_text = ''
+    if receipt:
+        answers = '、'.join(receipt['answers']) or '未显示'
+        receipt_text = f"\n\n平台回执\n{receipt['status']} · 我的答案：{answers}"
     return (f"{result['notice']}{scan}\n\n题干\n{result['prompt'] or '（未读到）'}\n\n"
-            f"选项\n{options or '（未读到）'}\n\n核对提示\n{warnings}\n\n"
+            f"选项\n{options or '（未读到）'}{receipt_text}\n\n核对提示\n{warnings}\n\n"
             f"用时 {result.get('seconds', 0):.2f} 秒\n\n识别来源\n" +
             '\n'.join(f"[{i}] {'控件文字' if b['source']=='native' else 'OCR'} " +
                       (f"{b['confidence']:.0%} " if b['confidence'] is not None else '') + b['text']

@@ -1,5 +1,5 @@
 """Operate the visible Android quiz only after an exact ikuns quiz alert or group card."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 import re
@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 from group_watch import APP, GROUP, activity, nodes, shell, snapshot, tap
 from app_runtime import DATA
 from pipeline import solve
+from question_capture import OWN_ANSWER, SUBMITTED, quiz_result_footer
 
 VIEWER = APP + ".webapp.ui.WebAppCommonViewer"
 STAMP = re.compile(r"\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}")
@@ -64,7 +65,7 @@ def outcome(root):
     values = [t for t, _ in texts(root)]
     if any("未提交获得积分" in t for t in values):
         return "已结束·未提交"
-    if any(t in {"已提交", "提交成功", "已作答", "已参与", "已提交，待教师公布正确答案"} or
+    if any(t in SUBMITTED or
            re.match(r"^(我的答案|你的答案|您已提交|提交时间)\s*[:：]", t) for t in values):
         return "已提交"
     if "已结束" in values:
@@ -73,8 +74,10 @@ def outcome(root):
 
 
 def platform_answers(root):
-    return [m[1] for t,_ in texts(root) if (m:=re.fullmatch(
-        r"(?:我的答案|你的答案)\s*[:：]\s*(?:\d+(?:\.\d+)?\s*积分\s*)?([A-M])",t))]
+    _, receipt = quiz_result_footer(root)
+    if receipt is not None:
+        return receipt['answers']
+    return [m[1] for t, _ in texts(root) if (m := OWN_ANSWER.fullmatch(t))]
 
 
 def save_platform_receipt(db, source, root, expected):
@@ -106,6 +109,7 @@ class Question:
     prompt: str
     options: dict
     controls: dict
+    receipt: dict | None = field(default=None, kw_only=True)
 
     def identity(self):
         content = [GROUP, self.stamp, self.title, self.prompt, self.options]
@@ -113,7 +117,8 @@ class Question:
 
 
 def read_question(root, recognized=None):
-    items = texts(root)
+    footer, receipt = quiz_result_footer(root)
+    items = [(value, node) for value, node in texts(root) if node not in footer]
     marker = re.compile(r"[\[【（(]\s*(?:单选题|判断题)\s*[\]】）)]|^(?:单选题|判断题)$")
     found = [(i, match) for i,(t,_) in enumerate(items) for match in marker.finditer(t)]
     if not is_quiz(root) or len(found) != 1:
@@ -139,7 +144,7 @@ def read_question(root, recognized=None):
             controls[key] = n
             radio_started = True
             continue
-        if radio_started or t in {"提交", "返回", "修改", "确定"} or re.match(r"^(?:我的答案|你的答案|正确答案)",t):
+        if radio_started or t in {"提交", "返回", "修改", "确定"}:
             continue
         if blocks and re.fullmatch("[A-Ma-m]", t):
             t = t.upper()+"."  # a standalone label preceding its own text block
@@ -149,7 +154,7 @@ def read_question(root, recognized=None):
     # actual question text. Keep these as read-only control mappings.
     trailing = []
     label_only=r"[（(\[【]?\s*([A-Ma-m])\s*[.．、:：)）\]】]"
-    while blocks and re.fullmatch(label_only,blocks[-1][0]):
+    while not (receipt and recognized is not None) and blocks and re.fullmatch(label_only,blocks[-1][0]):
         trailing.append(blocks.pop())
     if len(trailing) == 1:
         raise ValueError("最后一个选项缺少正文")
@@ -166,7 +171,10 @@ def read_question(root, recognized=None):
     def clean(value):
         joined = " ".join(value.split())
         return re.sub(r"(?<=[\u3400-\u9fff，。？！；：、]) (?=[\u3400-\u9fff])", "", joined)
-    if recognized is not None and controls:
+    if receipt and recognized is not None and not controls:
+        if keys != list(recognized['options']) or len(keys) < 2 or keys != list(OPTION_KEYS[:len(keys)]):
+            raise ValueError("结果页选项标识与识别结果不一致")
+    if recognized is not None and (controls or receipt):
         prompt, options = recognized['prompt'], recognized['options']
     elif not starts and len(controls)>=2 and list(controls)==list(OPTION_KEYS[:len(controls)]):
         # Native option-only exercises can consist solely of the A..F radios,
@@ -206,13 +214,13 @@ def read_question(root, recognized=None):
     if not stamp and any(t.startswith("剩余") for t,_ in before):
         countdown = next(i for i,(t,_) in enumerate(before) if t.startswith("剩余"))
         title = next((t for t,_ in before[countdown+1:] if not re.fullmatch(r"\d+[.．、]?",t)), "")
-    if not (title and prompt and all(options.values()) and set(options) == set(controls)):
+    if not (title and prompt and all(options.values()) and (receipt or set(options) == set(controls))):
         raise ValueError("题目、活动时间或作答选项不完整")
     if '判断题' in match[0]:
         labels={re.sub(r'\s+','',value).casefold() for value in options.values()}
         if len(options)!=2 or labels not in ({'对','错'},{'正确','错误'},{'是','否'},{'true','false'}):
             raise ValueError('判断题的两个选项无法核验')
-    return Question(title, stamp, prompt, options, controls)
+    return Question(title, stamp, prompt, options, {} if receipt else controls, receipt=receipt)
 
 
 def bounds(n):

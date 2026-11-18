@@ -5,7 +5,7 @@ import re
 import time
 import unicodedata
 
-from question_capture import APP, Capture, bounds, document, fingerprint, text
+from question_capture import APP, Capture, bounds, document, fingerprint, quiz_result_footer, text
 
 
 VIEWER = APP + '.group.ui.TopicImageViewerActivity'
@@ -90,8 +90,10 @@ def question_parts(root, size):
         return []
     web, _ = document(root, size)
 
+    footer, _ = quiz_result_footer(root)
+
     def content(n):
-        if n.get('package') != APP:
+        if n in footer or n.get('package') != APP:
             return
         kind, value = n.get('class'), text(n)
         if kind == 'android.widget.RadioButton':
@@ -345,7 +347,7 @@ def collect(device, first, cancel, remember=None):
         parts[pictures[0]].owner == 'prompt' and all(parts[i].owner != 'prompt' for i in pictures[1:])) and [text(n) for n in first.tree.iter('node')
         if n.get('class') == 'android.widget.RadioButton'] == list('ABCD')
     return Capture(output.getvalue(), validate=current.validate, originals=boxes,
-                   parts=None if five_images else parts)
+                   parts=None if five_images else parts, receipt=first.receipt)
 
 
 def assemble(originals, blocks, layout=None):

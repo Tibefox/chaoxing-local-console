@@ -140,6 +140,8 @@ def recognize(capture, cancel=None, timeout=45):
         result = assemble(capture.originals, blocks, capture.parts)
     else:
         result = extract(blocks, warnings)
+    if capture.receipt is not None:
+        result['receipt'] = capture.receipt
     result['seconds'] = round(time.monotonic() - begin, 3)
     result['size'] = image.size
     if capture.scan:
