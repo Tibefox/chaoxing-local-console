@@ -4,7 +4,7 @@ import unittest
 import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from question_capture import APP, capture_current, regions
+from question_capture import APP, capture_current, fingerprint, regions
 from question_extract import TextBlock, extract
 
 
@@ -23,6 +23,58 @@ def tree():
 
 
 class ExtractionTests(unittest.TestCase):
+    def test_only_verified_countdown_value_can_change(self):
+        from copy import deepcopy
+        for split in (False, True):
+            root = tree()
+            web = root[1]
+            label = deepcopy(web[0])
+            label.set('text', '剩余：' if split else '剩余：5分钟38秒')
+            web.insert(0, label)
+            timer = label
+            if split:
+                timer = deepcopy(label)
+                timer.set('text', '5分钟38秒')
+                web.insert(1, timer)
+            before = fingerprint(root)
+            timer.set('text', '5分钟37秒' if split else '剩余：5分钟37秒')
+            self.assertEqual(before, fingerprint(root))
+            for key, value in [('bounds','[0,0][10,10]'),('visible','false'),('text','已结束')]:
+                with self.subTest(split=split, key=key):
+                    changed = deepcopy(root)
+                    changed[1][int(split)].set(key, value)
+                    self.assertNotEqual(before, fingerprint(changed))
+            root.set('window','another')
+            self.assertNotEqual(before, fingerprint(root))
+
+    def test_duration_in_body_and_ambiguous_headers_are_not_masked(self):
+        from copy import deepcopy
+        root = tree()
+        web = root[1]
+        node = deepcopy(web[0])
+        node.set('text','剩余：43秒')
+        web.append(node)
+        before = fingerprint(root)
+        node.set('text','剩余：42秒')
+        self.assertNotEqual(before, fingerprint(root))
+        for value in ('剩余：若干秒', '剩余：43秒'):
+            extra = deepcopy(node)
+            extra.set('text',value)
+            web.insert(0, extra)
+        timer = deepcopy(node)
+        web.insert(0,timer)
+        before = fingerprint(root)
+        timer.set('text','剩余：41秒')
+        self.assertNotEqual(before, fingerprint(root))
+        # A separate parent between the label and duration is not a verified pair.
+        web.remove(timer)
+        web[0].set('text','剩余：')
+        child = ET.SubElement(web[1],'node',dict(node.attrib))
+        child.set('text','43秒')
+        before = fingerprint(root)
+        child.set('text','42秒')
+        self.assertNotEqual(before, fingerprint(root))
+
     def test_nested_webview_wrapper_reads_one_document(self):
         root = tree(); web = root[1]; root.remove(web)
         wrapper = ET.SubElement(root, 'node', {'class': 'android.webkit.WebView',

@@ -47,10 +47,60 @@ def quiz_result_footer(root):
     return {node for _, node in footer}, {'status': '已提交', 'answers': answers}
 
 
+DURATION = re.compile(r'(?:[0-9]+小时(?:[0-9]+分(?:钟)?)?(?:[0-9]+秒)?|'
+                      r'[0-9]+分(?:钟)?(?:[0-9]+秒)?|[0-9]+秒|[0-9]{1,2}:[0-5][0-9](?::[0-5][0-9])?)')
+TIME_LABEL = re.compile(r'剩余(?:时间)?\s*[:：]\s*')
+QUIZ_MARKER = re.compile(r'^(?:\d+[.．、]\s*)?[\[【（(]\s*(?:单选题|多选题|判断题)\s*[\]】）)]')
+
+
+def countdown_field(root):
+    """Identify one passive timer in the page header; uncertainty keeps the full fingerprint."""
+    titles = [text(n) for n in root.iter('node') if n.get('resource-id') == APP + ':id/toolbar_tv_title']
+    if titles not in (['随堂练习'], ['投票'], ['投票详情']):
+        return None, ''
+    documents = [n for n in root.iter('node') if n.get('class') == 'android.webkit.WebView'
+                 and n.find(".//node[@class='android.webkit.WebView']") is None]
+    if len(documents) != 1:
+        return None, ''
+    header = set()
+    for n in documents[0].iter('node'):
+        if titles == ['随堂练习']:
+            if QUIZ_MARKER.match(text(n)):
+                break
+        elif n.get('resource-id') == 'main' or n.get('class') in ('android.widget.RadioButton', 'android.widget.CheckBox'):
+            break
+        if (not len(n) and n.get('package') == APP and n.get('class') == 'android.widget.TextView'
+                and all(n.get(attr) != 'true' for attr in ('clickable', 'checkable', 'editable'))):
+            header.add(n)
+    else:
+        return None, ''
+    candidates = []
+    for parent in documents[0].iter('node'):
+        previous = None
+        for n in parent:
+            if n in header:
+                value = text(n)
+                label = TIME_LABEL.match(value)
+                if label and DURATION.fullmatch(value[label.end():]):
+                    candidates.append((n, label.group()))
+                elif previous in header and TIME_LABEL.fullmatch(text(previous)) and DURATION.fullmatch(value):
+                    candidates.append((n, ''))
+            previous = n
+    return candidates[0] if len(candidates) == 1 else (None, '')
+
+
 def fingerprint(root):
-    # Countdown changes are expected; geometry, content and window changes are not.
-    values = [(n.get('class'), n.get('bounds'), n.get('visible'),
-               re.sub(r'剩余[^\n]*', '剩余', text(n))) for n in root.iter('node')]
+    timer, prefix = countdown_field(root)
+    values = []
+    for n in root.iter('node'):
+        attrs = n.attrib
+        if n is timer:
+            attrs = attrs.copy()
+            value = text(n)
+            for key in ('text', 'content-desc'):
+                if attrs.get(key) == value:
+                    attrs[key] = (prefix, 'countdown')
+        values.append((len(n), sorted(attrs.items())))
     return hashlib.sha256(repr((root.get('window'), values)).encode()).hexdigest()
 
 

@@ -190,11 +190,20 @@ class MixedContentTests(TestCase):
         self.node(self.node(self.web,'View',clickable='true'),'TextView')
         for key in 'ABCD':
             self.node(self.web,'RadioButton',key,bounds='[0,300][480,330]')
-        changed = deepcopy(self.root)
+        timer = self.node(self.web,'TextView','剩余：45秒')
+        self.web.remove(timer)
+        self.web.insert(0,timer)
+        tick = deepcopy(self.root)
+        tick[1][0].set('text','剩余：44秒')
+        changed = deepcopy(tick)
         changed.set('window','different')
+        edited = deepcopy(tick)
+        edited[1][1].set('text','1.[单选题]剩余条件已修改')
         first = Capture(b'frame',self.root)
         for before,after,reason,count in [(changed,self.root,'打开原图前',0),
-                                           (self.root,changed,'从原图返回后',2)]:
+                                           (self.root,changed,'从原图返回后',2),
+                                           (edited,tick,'打开原图前',0),
+                                           (tick,edited,'从原图返回后',2)]:
             with self.subTest(reason=reason):
                 device = Mock(serial='s',adb='adb')
                 device.snapshot.side_effect = [before,after]
