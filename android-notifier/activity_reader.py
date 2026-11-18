@@ -2,7 +2,7 @@
 from hashlib import sha256
 
 from group_watch import bridge
-from original_images import collect, image_kind, question_parts
+from original_images import collect, image_kind, open_original, question_parts
 from preview_device import ReadOnlyDevice
 from question_capture import bounds, document, fingerprint
 
@@ -23,6 +23,10 @@ class ActivityDevice(ReadOnlyDevice):
 def has_images(root):
     web = next((n for n in root.iter('node') if n.get('class') == 'android.webkit.WebView'), None)
     return web is not None and any(image_kind(n) for n in web.iter('node'))
+
+
+def image_signature(image):
+    return image.size, sha256(image.tobytes()).digest()
 
 
 class ActivityReader:
@@ -53,8 +57,8 @@ class ActivityReader:
             size = image_from_bytes(first.png).size
             layout = question_parts(root, size)
             samples = {}
-            def remember(index, pixels):
-                samples[index] = (pixels.size, sha256(pixels.tobytes()).digest())
+            def remember(index, pixels, original=None):
+                samples[index] = (image_signature(pixels), image_signature(original) if original is not None else None)
             capture = collect(device, first, self.stop, remember)
             if not capture.originals:
                 raise ValueError('无法确定活动图片归属')
@@ -74,16 +78,31 @@ class ActivityReader:
         if parts != self.layout:
             raise ValueError('图片或选项结构已变化')
         _, (x,y,r,b) = document(root, frame.size)
-        for index, (size, digest) in self.samples.items():
+        observed = {}
+        replacements = {}
+        for index, (thumbnail, original) in self.samples.items():
             node = parts[index].node
             box = bounds(node)
             if (not box or node.get('visible') == 'false' or box[1] <= y or box[3] >= b
                     or box[0] < x or box[2] > r or box[1] >= box[3]):
                 continue
-            pixels = frame.crop(box)
-            if pixels.size != size or sha256(pixels.tobytes()).digest() != digest:
-                raise ValueError('题目图片内容已变化')
+            signature = image_signature(frame.crop(box))
+            observed[index] = (box, signature)
+            if signature != thumbnail:
+                if original is None or parts[index].kind != 'gallery':
+                    raise ValueError('题目图片内容已变化')
+                photo, root = open_original(device, root, parts, index, frame.size, self.stop)
+                if image_signature(photo) != original:
+                    raise ValueError('题目原图内容已变化')
+                replacements[index] = (signature, original)
+        if replacements:
+            # Only cache the new thumbnail after confirming that the same pixels survived the round trip.
+            after = image_from_bytes(device.read(device.serial,'exec-out','screencap','-p'))
+            if after.size != frame.size or any(image_signature(after.crop(box)) != sig for box, sig in observed.values()):
+                raise ValueError('从原图返回后题目图片已变化')
         if fingerprint(device.snapshot(device.serial)) != fingerprint(root):
             raise ValueError('核对图片时页面发生变化')
         device.policy()
-        return root, self.parser(root, self.result)
+        question = self.parser(root, self.result)
+        self.samples.update(replacements)
+        return root, question

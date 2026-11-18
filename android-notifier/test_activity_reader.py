@@ -14,7 +14,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import ikuns_quiz as quiz
 import ikuns_vote as vote
 import group_watch
-from activity_reader import ActivityReader
+from activity_reader import ActivityReader, image_signature
 from original_images import question_parts, assemble
 from question_capture import APP, Capture
 from question_extract import TextBlock
@@ -154,6 +154,47 @@ class ReaderTests(unittest.TestCase):
                 ocr.assert_called_once()
                 select.assert_not_called()
                 tap.assert_not_called()
+
+    def test_changed_gallery_thumbnail_requires_matching_original_and_stable_return(self):
+        root = quiz_page('AB', '单选题')
+        thumb = root[1][-3]
+        thumb.set('class', 'android.view.View')
+        thumb.set('clickable', 'true')
+        ET.SubElement(thumb, 'node', {'class':'android.widget.TextView', 'package':APP})
+        device = Mock()
+        device.snapshot.return_value = root
+        parser = Mock()
+        reader = ActivityReader(parser, device, Event())
+        reader.window, reader.result = root.get('window'), {'status':'recognized'}
+        reader.layout = question_parts(root, (500,700))
+        index = next(i for i,p in enumerate(reader.layout) if p.kind == 'gallery' and p.owner == 'A')
+        def pixels(value):
+            image = Mock(size=(176,100))
+            image.tobytes.return_value = value
+            return image
+        baseline, shifted, original = map(pixels, [b'thumb', b'shifted thumb', b'original'])
+        frame = Mock(size=(500,700))
+        sample = (image_signature(baseline), image_signature(original))
+        reader.samples[index] = sample
+        with (patch('ocr_engine.image_from_bytes', return_value=frame),
+              patch('activity_reader.open_original') as reopen):
+            frame.crop.return_value = shifted
+            reopen.return_value = pixels(b'different original'), root
+            with self.assertRaisesRegex(ValueError, '原图内容已变化'):
+                reader.read(root)
+            self.assertEqual(reader.samples[index], sample)
+            reopen.return_value = original, root
+            frame.crop.side_effect = [shifted, baseline]
+            with self.assertRaisesRegex(ValueError, '返回后题目图片已变化'):
+                reader.read(root)
+            self.assertEqual(reader.samples[index], sample)
+            parser.assert_not_called()
+            frame.crop.side_effect = None
+            reader.read(root)
+            reopen.assert_called_with(device, root, reader.layout, index, frame.size, reader.stop)
+            reopen.reset_mock()
+            reader.read(root)
+            reopen.assert_not_called()
 
     def test_real_ocr_through_the_activity_reader_and_cache_invalidation(self):
         import os

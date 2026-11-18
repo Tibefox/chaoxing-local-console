@@ -251,6 +251,43 @@ def read_gallery(device, cancel):
     raise ValueError('原图尚未加载稳定，请重试')
 
 
+def open_original(device, root, parts, index, size, cancel):
+    """Open only the verified gallery attachment and return to the same quiz tree."""
+    box = bounds(parts[index].node)
+    device.quiet()
+    fresh = device.snapshot(device.serial)
+    if fresh.get('activity') != QUIZ or fingerprint(fresh) != fingerprint(root):
+        raise ValueError('打开原图前题目窗口发生变化')
+    targets = question_parts(fresh, size)
+    if targets != parts or bounds(targets[index].node) != box:
+        raise ValueError('点图前附件入口发生变化')
+    left, top, right, bottom = document(fresh, size)[1]
+    if (targets[index].kind != 'gallery' or targets[index].node.get('visible') == 'false'
+            or not box or not (left <= box[0] < box[2] <= right and top+2 <= box[1] < box[3] <= bottom-2)
+            or min(box[2]-box[0], box[3]-box[1]) < 24):
+        raise ValueError('附件入口未完整显示，已停止读取原图')
+    x, y = (box[0]+box[2])//2, (box[1]+box[3])//2
+    for n in fresh.iter('node'):
+        b = bounds(n)
+        if (b and b[0] <= x < b[2] and b[1] <= y < b[3] and
+                (n.get('checkable') == 'true' or n.get('class') in
+                 ('android.widget.RadioButton', 'android.widget.CheckBox', 'android.widget.Button'))):
+            raise ValueError('原图入口与答题控件重叠，已停止')
+    device.run([device.adb, '-s', device.serial, 'shell', 'input', 'tap', str(x), str(y)])
+    try:
+        wait_for_activity(device, VIEWER, cancel)
+        photo = read_gallery(device, cancel)
+    finally:
+        # Never send Back to the quiz, another app, or a different activity.
+        if not cancel.is_set() and device.activity_name() == VIEWER:
+            device.run([device.adb, '-s', device.serial, 'shell', 'input', 'keyevent', '4'])
+            wait_for_activity(device, QUIZ, cancel)
+    returned = device.snapshot(device.serial)
+    if returned.get('activity') != QUIZ or fingerprint(returned) != fingerprint(root):
+        raise ValueError('从原图返回后题面已变化，结果已丢弃')
+    return photo, returned
+
+
 def collect(device, first, cancel, remember=None):
     from ocr_engine import image_from_bytes, load_dependencies, MAX_PIXELS
     size = image_from_bytes(first.png).size
@@ -286,47 +323,23 @@ def collect(device, first, cancel, remember=None):
             if fingerprint(current.tree) == fingerprint(root):
                 raise ValueError('已到页面末尾，图片仍未完整显示')
             root = current.tree
-        if remember is not None:
-            remember(index, image_from_bytes(current.png).crop(box))
         if found[index].kind == 'inline':
             current.validate()
             photo = image_from_bytes(current.png).crop(box)
+            if remember is not None:
+                remember(index, photo)
             pixels += photo.width * photo.height
             if pixels > MAX_PIXELS:
                 raise ValueError('题目图片总尺寸超限')
             photos.append(photo)
             continue
-        device.quiet()
-        fresh = device.snapshot(device.serial)
-        if fresh.get('activity') != QUIZ or fingerprint(fresh) != fingerprint(root):
-            raise ValueError('打开原图前题目窗口发生变化')
-        targets = question_parts(fresh, size)
-        if targets != parts or bounds(targets[index].node) != box:
-            raise ValueError('点图前附件入口发生变化')
-        x, y = (box[0]+box[2])//2, (box[1]+box[3])//2
-        for n in fresh.iter('node'):
-            b = bounds(n)
-            if (b and b[0] <= x < b[2] and b[1] <= y < b[3] and
-                    (n.get('checkable') == 'true' or n.get('class') in
-                     ('android.widget.RadioButton', 'android.widget.CheckBox', 'android.widget.Button'))):
-                raise ValueError('原图入口与答题控件重叠，已停止')
-        device.run([device.adb, '-s', device.serial, 'shell', 'input', 'tap', str(x), str(y)])
-        try:
-            wait_for_activity(device, VIEWER, cancel)
-            photo = read_gallery(device, cancel)
-            pixels += photo.width * photo.height
-            if pixels > MAX_PIXELS:
-                raise ValueError('题目图片总尺寸超限')
-            photos.append(photo)
-        finally:
-            # Never send Back to the quiz, another app, or a different activity.
-            if not cancel.is_set() and device.activity_name() == VIEWER:
-                device.run([device.adb, '-s', device.serial, 'shell', 'input', 'keyevent', '4'])
-                wait_for_activity(device, QUIZ, cancel)
-        returned = device.snapshot(device.serial)
-        if returned.get('activity') != QUIZ or fingerprint(returned) != fingerprint(root):
-            raise ValueError('从原图返回后题面已变化，结果已丢弃')
-        root = returned
+        photo, root = open_original(device, root, found, index, size, cancel)
+        if remember is not None:
+            remember(index, image_from_bytes(current.png).crop(box), photo)
+        pixels += photo.width * photo.height
+        if pixels > MAX_PIXELS:
+            raise ValueError('题目图片总尺寸超限')
+        photos.append(photo)
     # Small, tight crops can lose the first characters at the OCR detector's edge.
     margins = [32 if min(im.size) < 256 else 0 for im in photos]
     height = sum(im.height + 2*pad for im, pad in zip(photos, margins))
