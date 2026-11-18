@@ -314,8 +314,8 @@ def collect(device, first, cancel, remember=None):
     output = BytesIO()
     sheet.save(output, format='PNG')
     # Preserve the verified five-image recovery for cards whose C/D images share a row.
-    five_images = len(parts) == len(pictures) == 5 and parts[0].owner == 'prompt' and all(
-        part.owner != 'prompt' for part in parts[1:]) and [text(n) for n in first.tree.iter('node')
+    five_images = len(pictures) == 5 and not any(p.value for p in parts) and (
+        parts[pictures[0]].owner == 'prompt' and all(parts[i].owner != 'prompt' for i in pictures[1:])) and [text(n) for n in first.tree.iter('node')
         if n.get('class') == 'android.widget.RadioButton'] == list('ABCD')
     return Capture(output.getvalue(), validate=current.validate, originals=boxes,
                    parts=None if five_images else parts)

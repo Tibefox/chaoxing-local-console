@@ -120,3 +120,51 @@ class ReaderTests(unittest.TestCase):
                 ocr.assert_called_once()
                 select.assert_not_called()
                 tap.assert_not_called()
+
+    def test_real_ocr_through_the_activity_reader_and_cache_invalidation(self):
+        import os
+        if os.environ.get('CHAOXING_OCR_INTEGRATION') != '1':
+            self.skipTest('Windows OCR integration')
+        from io import BytesIO
+        from PIL import Image, ImageDraw, ImageFont
+        picture = Image.new('RGB',(500,700),'white')
+        font=ImageFont.truetype(r'C:\Windows\Fonts\msyh.ttc',34)
+        ImageDraw.Draw(picture).text((56,168),'输入设备',font=font,fill='black')
+        data=BytesIO()
+        picture.save(data,format='PNG')
+        for handler,root in [(quiz,quiz_page('ABCDEF','单选题')), (quiz,quiz_page('AB','判断题')),
+                             (vote,vote_page()),(vote,vote_page('multiple'))]:
+            with self.subTest(handler=handler.__name__,controls=len(list(root.iter()))):
+                web=next(n for n in root.iter('node') if n.get('class')=='android.webkit.WebView')
+                if handler is quiz:
+                    for n in list(web):
+                        if n.get('class')=='android.widget.Image' and list(web).index(n)>3:
+                            web.remove(n)
+                    radios=[n for n in web if n.get('class')=='android.widget.RadioButton']
+                    for index,n in enumerate(radios):
+                        value=(['正确','错误'][index] if len(radios)==2 else '选择'+str(index))
+                        n.set('text',n.get('text')+' '+value)
+                else:
+                    web.insert(1,ET.Element('node',{'class':'android.widget.Image','package':APP,
+                                                     'bounds':'[24,150][240,250]'}))
+                for n in web.iter('node'):
+                    if n.get('class')=='android.widget.Image':n.set('bounds','[24,150][240,250]')
+                device=Mock(serial='dev')
+                device.snapshot.return_value=root
+                device.capture.return_value=Capture(data.getvalue(),root,validate=lambda:None)
+                device.read.return_value=data.getvalue()
+                device.activity_name.return_value=quiz.VIEWER
+                reader=ActivityReader(handler.read_question,device,Event())
+                _,q=reader.read(root)
+                self.assertIn('输入设备',q.prompt)
+                self.assertGreaterEqual(len(q.options),2)
+                _,same=reader.read(root)
+                self.assertEqual(q.identity(),same.identity())
+                device.capture.assert_called_once()
+                altered=picture.copy()
+                altered.putpixel((60,170),(200,0,0))
+                changed=BytesIO()
+                altered.save(changed,format='PNG')
+                device.read.return_value=changed.getvalue()
+                with self.assertRaisesRegex(ValueError,'内容已变化'):reader.read(root)
+                device.run.assert_not_called()

@@ -47,7 +47,7 @@ class OriginalImageTests(TestCase):
             for _ in range(count):
                 thumb = node(web, 'android.view.View', clickable='true')
                 node(thumb, 'android.widget.TextView')
-        self.assertEqual([part.owner for part in question_parts(root, (900, 1600))],
+        self.assertEqual([part.owner for part in question_parts(root, (900, 1600)) if part.kind != 'text'],
                          ['prompt','A','B','C','C'])
         node(web, 'android.widget.TextView', '另有文字')
         self.assertEqual(question_parts(root, (900, 1600))[-1].value, '另有文字')
