@@ -2,7 +2,7 @@
 
 使用 MuMu 的 Android 页面识别、Qwen 本地模型与知识检索，串行处理目标群的随堂练习和投票，并核对回执、返回群聊继续监看。旧网页轮询和网页提交分支已移除。
 
-[下载安装包](https://github.com/Tibefox/chaoxing-local-console/releases/tag/v0.1.6) · [完整安装流程](docs/INSTALL.md) · [源码构建](docs/BUILD.md)
+[下载安装包](https://github.com/Tibefox/chaoxing-local-console/releases/tag/v0.1.6) · [完整安装流程](docs/INSTALL.md) · [源码构建](docs/BUILD.md) · [开发手记：为了逃课，我做了个学习通自动答题脚本](docs/blog/chaoxing-script.md)
 
 ## v0.1.6 当前定版（2026-11-11）
 
