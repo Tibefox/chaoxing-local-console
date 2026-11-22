@@ -289,7 +289,7 @@ def open_original(device, root, parts, index, size, cancel):
 
 
 def collect(device, first, cancel, remember=None):
-    from ocr_engine import image_from_bytes, load_dependencies, MAX_PIXELS
+    from ocr_engine import image_from_bytes, MAX_PIXELS
     size = image_from_bytes(first.png).size
     parts = question_parts(first.tree, size)
     pictures = [i for i, part in enumerate(parts) if part.kind != 'text']
@@ -340,6 +340,17 @@ def collect(device, first, cancel, remember=None):
         if pixels > MAX_PIXELS:
             raise ValueError('题目图片总尺寸超限')
         photos.append(photo)
+    png, boxes = image_sheet([parts[i].owner for i in pictures], photos)
+    # Preserve the verified five-image recovery for cards whose C/D images share a row.
+    five_images = len(pictures) == 5 and not any(p.value for p in parts) and (
+        parts[pictures[0]].owner == 'prompt' and all(parts[i].owner != 'prompt' for i in pictures[1:])) and [text(n) for n in first.tree.iter('node')
+        if n.get('class') == 'android.widget.RadioButton'] == list('ABCD')
+    return Capture(png, validate=current.validate, originals=boxes,
+                   parts=None if five_images else parts, receipt=first.receipt)
+
+
+def image_sheet(owners, photos):
+    from ocr_engine import MAX_PIXELS, load_dependencies
     # Small, tight crops can lose the first characters at the OCR detector's edge.
     margins = [32 if min(im.size) < 256 else 0 for im in photos]
     height = sum(im.height + 2*pad for im, pad in zip(photos, margins))
@@ -348,19 +359,36 @@ def collect(device, first, cancel, remember=None):
         raise ValueError('题目图片总尺寸超限')
     sheet = load_dependencies().new('RGB', (width, height), 'white')
     boxes, top = [], 0
-    for index, im, pad in zip(pictures, photos, margins):
+    for owner, im, pad in zip(owners, photos, margins):
         sheet.paste(im, (pad, top+pad))
         bottom = top + im.height + 2*pad
-        boxes.append((parts[index].owner, (0, top, im.width+2*pad, bottom)))
+        boxes.append((owner, (0, top, im.width+2*pad, bottom)))
         top = bottom
     output = BytesIO()
     sheet.save(output, format='PNG')
-    # Preserve the verified five-image recovery for cards whose C/D images share a row.
-    five_images = len(pictures) == 5 and not any(p.value for p in parts) and (
-        parts[pictures[0]].owner == 'prompt' and all(parts[i].owner != 'prompt' for i in pictures[1:])) and [text(n) for n in first.tree.iter('node')
-        if n.get('class') == 'android.widget.RadioButton'] == list('ABCD')
-    return Capture(output.getvalue(), validate=current.validate, originals=boxes,
-                   parts=None if five_images else parts, receipt=first.receipt)
+    return output.getvalue(), boxes
+
+
+def capture_slots(paths, cancel):
+    from ocr_engine import MAX_PIXELS, file_capture, image_from_bytes
+    layout, owners, photos = [], [], []
+    pixels = 0
+    for key in KEYS:
+        if cancel.is_set():
+            raise InterruptedError('已取消识别')
+        path = paths.get(key)
+        layout.append(Part(key, 'image' if path else 'missing', '', None))
+        if path:
+            image = image_from_bytes(file_capture(path).png)
+            pixels += image.width * image.height
+            if pixels > MAX_PIXELS:
+                raise ValueError('题目图片总尺寸超限')
+            photos.append(image)
+            owners.append(key)
+    if not photos:
+        raise ValueError('请至少选择一张图片')
+    png, boxes = image_sheet(owners, photos)
+    return Capture(png, originals=boxes, parts=layout)
 
 
 def assemble(originals, blocks, layout=None):
@@ -384,6 +412,10 @@ def assemble(originals, blocks, layout=None):
             fields.setdefault(fragment.owner, [])
         images = iter(parts)
         for fragment in layout:
+            if fragment.kind == 'missing':
+                label = '题干' if fragment.owner == 'prompt' else fragment.owner
+                warnings.append(f'{label} 缺图')
+                continue
             value = fragment.value
             if fragment.kind != 'text':
                 owner, value = next(images)

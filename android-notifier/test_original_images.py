@@ -19,6 +19,23 @@ class OriginalImageTests(TestCase):
         self.assertEqual(result['status'], 'needs_review')
         self.assertEqual(result['options'], {'A': '', 'B': '', 'C': '音箱', 'D': '打印机'})
 
+    def test_import_slots_keep_unlabelled_images_in_place(self):
+        from original_images import KEYS, Part
+        for missing in KEYS:
+            with self.subTest(missing=missing):
+                layout, boxes, blocks = [], [], []
+                for index, owner in enumerate(KEYS):
+                    layout.append(Part(owner, 'missing' if owner == missing else 'image', '', None))
+                    if owner != missing:
+                        box = (0, index*100, 200, index*100+90)
+                        boxes.append((owner, box))
+                        blocks.append(TextBlock(f'文字{index}', box, 'ocr', .99))
+                result = assemble(boxes, blocks, layout)
+                fields = {'prompt': result['prompt'], **result['options']}
+                self.assertEqual(fields, {k: '' if k == missing else f'文字{i}' for i, k in enumerate(KEYS)})
+                self.assertEqual(result['status'], 'needs_review')
+                self.assertIn(('题干' if missing == 'prompt' else missing) + ' 缺图', result['warnings'])
+
     def test_irregular_layout_requires_printed_labels_and_review(self):
         result = self.parse(['prompt','A','B','C','C'], ['问题','A. 键盘','B. 屏幕','D. 打印机','C. 音箱'])
         self.assertEqual(result['options']['D'], '打印机')

@@ -8,6 +8,10 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 
 from ocr_engine import file_capture, load_dependencies, recognize
+from original_images import KEYS, capture_slots
+
+
+IMAGE_TYPES = [('题目图片', '*.png *.jpg *.jpeg *.bmp *.webp')]
 
 
 def format_result(result):
@@ -54,6 +58,9 @@ class Preview:
         bar.pack(fill='x')
         self.file_button = ttk.Button(bar, text='导入题目图片', command=self.open_file)
         self.file_button.pack(side='left')
+        self.slot_paths = {}
+        self.slots_button = ttk.Button(bar, text='五图导入预览', command=self.open_slots)
+        self.slots_button.pack(side='left', padx=8)
         self.current_button = ttk.Button(bar, text='识别当前题目', command=self.open_current)
         self.current_button.pack(side='left', padx=8)
         if current is None:
@@ -100,6 +107,7 @@ class Preview:
         self.canvas.yview_moveto(0)
         self.file_button.state(['disabled']); self.current_button.state(['disabled'])
         self.long_button.state(['disabled'])
+        self.slots_button.state(['disabled'])
         self.cancel_button.state(['!disabled'])
         self.status.set('正在读取与识别，可随时取消…')
         def work():
@@ -114,9 +122,48 @@ class Preview:
 
     def open_file(self):
         path = filedialog.askopenfilename(parent=self.window, title='选择单道题目图片',
-            filetypes=[('题目图片', '*.png *.jpg *.jpeg *.bmp *.webp')])
+            filetypes=IMAGE_TYPES)
         if path:
             self.start(lambda: file_capture(path))
+
+    def open_slots(self):
+        window = tk.Toplevel(self.window)
+        window.title('五图导入预览')
+        window.transient(self.window)
+        panel = ttk.Frame(window, padding=12)
+        panel.pack(fill='both', expand=True)
+        paths = self.slot_paths.copy()
+        names = {}
+        def update(key, path):
+            if path:
+                paths[key] = path
+            else:
+                paths.pop(key, None)
+            names[key].set(Path(path).name if path else '未选图片')
+            run.state(['!disabled'] if paths else ['disabled'])
+
+        def choose(key):
+            path = filedialog.askopenfilename(parent=window, title='选择题干或选项图片', filetypes=IMAGE_TYPES)
+            if path:
+                update(key, path)
+
+        def preview():
+            self.slot_paths = paths
+            window.destroy()
+            self.start(lambda: capture_slots(paths, self.cancel))
+
+        for row, key in enumerate(KEYS):
+            label = '题干' if key == 'prompt' else key
+            ttk.Label(panel, text=label).grid(row=row, column=0, sticky='w')
+            names[key] = tk.StringVar(master=window, value=Path(paths[key]).name if key in paths else '未选图片')
+            ttk.Label(panel, textvariable=names[key], width=32).grid(row=row, column=1, sticky='w', padx=8)
+            ttk.Button(panel, text='选择图片', command=lambda k=key: choose(k)).grid(row=row, column=2, pady=2)
+            ttk.Button(panel, text='清除', command=lambda k=key: update(k, None)).grid(row=row, column=3, padx=4)
+        run = ttk.Button(panel, text='识别已选图片', command=preview)
+        run.grid(row=len(KEYS), column=2, columnspan=2, sticky='e', pady=(8, 0))
+        if not paths:
+            run.state(['disabled'])
+        window.grab_set()
 
     def open_current(self):
         if self.current:
@@ -141,6 +188,7 @@ class Preview:
                 continue
             self.busy = False
             self.file_button.state(['!disabled'])
+            self.slots_button.state(['!disabled'])
             if self.current:
                 self.current_button.state(['!disabled'])
             if self.current_long:
